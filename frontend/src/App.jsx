@@ -1,19 +1,26 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { api } from './api'
+import { TEAM, THEMES } from './constants'
 import KanbanBoard from './components/KanbanBoard'
 import TableView from './components/TableView'
 import DealModal from './components/DealModal'
 import StatsBar from './components/StatsBar'
+import DTELogo from './components/DTELogo'
 
 let toastId = 0
 
 export default function App() {
-  const [deals, setDeals] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [view, setView] = useState('kanban') // 'kanban' | 'table'
-  const [modalOpen, setModalOpen] = useState(false)
+  const [deals, setDeals]           = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [view, setView]             = useState('kanban')
+  const [modalOpen, setModalOpen]   = useState(false)
   const [editingDeal, setEditingDeal] = useState(null)
-  const [toasts, setToasts] = useState([])
+  const [toasts, setToasts]         = useState([])
+
+  // Global filters (apply to both kanban + table)
+  const [search, setSearch]         = useState('')
+  const [ownerFilter, setOwnerFilter] = useState('All')
+  const [themeFilter, setThemeFilter] = useState('All')
 
   const showToast = useCallback((msg, type = 'info') => {
     const id = ++toastId
@@ -25,7 +32,7 @@ export default function App() {
     try {
       const data = await api.getDeals()
       setDeals(data)
-    } catch (e) {
+    } catch {
       showToast('Failed to load deals', 'error')
     } finally {
       setLoading(false)
@@ -66,61 +73,115 @@ export default function App() {
   }
 
   const handleDragMove = useCallback(async (dealId, newStage) => {
-    // Optimistic update
     setDeals(d => d.map(x => x.id === dealId ? { ...x, stage: newStage } : x))
     try {
       await api.updateDeal(dealId, { stage: newStage })
     } catch (e) {
       showToast(e.message, 'error')
-      loadDeals() // revert
+      loadDeals()
     }
   }, [showToast, loadDeals])
 
-  const openAdd = () => { setEditingDeal(null); setModalOpen(true) }
+  const openAdd  = () => { setEditingDeal(null); setModalOpen(true) }
   const openEdit = (deal) => { setEditingDeal(deal); setModalOpen(true) }
   const closeModal = () => { setModalOpen(false); setEditingDeal(null) }
 
   const handleSave = async (data) => {
-    if (editingDeal) {
-      await handleUpdate(editingDeal.id, data)
-    } else {
-      await handleCreate(data)
-    }
+    if (editingDeal) await handleUpdate(editingDeal.id, data)
+    else await handleCreate(data)
     closeModal()
   }
 
+  // Apply global filters
+  const filteredDeals = useMemo(() => {
+    let rows = deals
+    if (ownerFilter !== 'All') rows = rows.filter(d => d.owner === ownerFilter)
+    if (themeFilter !== 'All') rows = rows.filter(d => d.theme === themeFilter)
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      rows = rows.filter(d =>
+        d.company_name?.toLowerCase().includes(q) ||
+        d.sector?.toLowerCase().includes(q) ||
+        d.country?.toLowerCase().includes(q) ||
+        d.owner?.toLowerCase().includes(q) ||
+        d.domain?.toLowerCase().includes(q)
+      )
+    }
+    return rows
+  }, [deals, ownerFilter, themeFilter, search])
+
+  const hasFilters = ownerFilter !== 'All' || themeFilter !== 'All' || search.trim()
+
   return (
     <>
-      {/* Navbar */}
+      {/* ── Navbar ── */}
       <nav className="navbar">
-        <div className="navbar-logo">
-          <div className="navbar-logo-icon">D</div>
-          DealFlow
+        <div className="navbar-brand">
+          <DTELogo height={30} />
+          <span className="navbar-divider" />
+          <span className="navbar-subtitle">Deal Pipeline</span>
         </div>
+
         <div className="navbar-spacer" />
-        <div className="view-toggle">
-          <button
-            className={view === 'kanban' ? 'active' : ''}
-            onClick={() => setView('kanban')}
+
+        {/* Global filters */}
+        <div className="navbar-filters">
+          <div className="search-wrap">
+            <svg className="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input
+              className="form-input search-input"
+              placeholder="Search…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          <select
+            className="form-select filter-select"
+            value={ownerFilter}
+            onChange={e => setOwnerFilter(e.target.value)}
           >
+            <option value="All">All owners</option>
+            {TEAM.map(m => <option key={m}>{m}</option>)}
+          </select>
+
+          <select
+            className="form-select filter-select"
+            value={themeFilter}
+            onChange={e => setThemeFilter(e.target.value)}
+          >
+            <option value="All">All themes</option>
+            {THEMES.map(t => <option key={t.value}>{t.value}</option>)}
+          </select>
+
+          {hasFilters && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => { setSearch(''); setOwnerFilter('All'); setThemeFilter('All') }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        <div className="view-toggle">
+          <button className={view === 'kanban' ? 'active' : ''} onClick={() => setView('kanban')}>
             ▦ Board
           </button>
-          <button
-            className={view === 'table' ? 'active' : ''}
-            onClick={() => setView('table')}
-          >
+          <button className={view === 'table' ? 'active' : ''} onClick={() => setView('table')}>
             ☰ Table
           </button>
         </div>
+
         <button className="btn btn-primary" onClick={openAdd}>
           + Add Deal
         </button>
       </nav>
 
-      {/* Stats bar */}
+      {/* ── Stats bar ── */}
       <StatsBar deals={deals} />
 
-      {/* Main content */}
+      {/* ── Main content ── */}
       {loading ? (
         <div className="loading-state">
           <div className="spinner" />
@@ -129,7 +190,7 @@ export default function App() {
       ) : view === 'kanban' ? (
         <div className="board-container">
           <KanbanBoard
-            deals={deals}
+            deals={filteredDeals}
             onUpdateDeal={handleDragMove}
             onEditDeal={openEdit}
             onDeleteDeal={handleDelete}
@@ -138,14 +199,14 @@ export default function App() {
       ) : (
         <div className="table-container">
           <TableView
-            deals={deals}
+            deals={filteredDeals}
             onEditDeal={openEdit}
             onDeleteDeal={handleDelete}
           />
         </div>
       )}
 
-      {/* Modal */}
+      {/* ── Modal ── */}
       {modalOpen && (
         <DealModal
           deal={editingDeal}
@@ -154,7 +215,7 @@ export default function App() {
         />
       )}
 
-      {/* Toasts */}
+      {/* ── Toasts ── */}
       <div className="toast-container">
         {toasts.map(t => (
           <div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>

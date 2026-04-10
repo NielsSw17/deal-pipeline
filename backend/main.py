@@ -10,6 +10,18 @@ from database import engine, get_db, Base
 
 Base.metadata.create_all(bind=engine)
 
+# Migrate existing SQLite databases that predate new columns
+def _migrate():
+    from sqlalchemy import text, inspect
+    with engine.connect() as conn:
+        existing = {col['name'] for col in inspect(engine).get_columns('deals')}
+        for col, typedef in [('domain', 'TEXT'), ('theme', 'TEXT')]:
+            if col not in existing:
+                conn.execute(text(f'ALTER TABLE deals ADD COLUMN {col} {typedef}'))
+        conn.commit()
+
+_migrate()
+
 app = FastAPI(title="Deal Pipeline CRM", version="1.0.0")
 
 app.add_middleware(
@@ -32,6 +44,8 @@ class DealCreate(BaseModel):
     owner: Optional[str] = None
     notes: Optional[str] = None
     position: Optional[int] = 0
+    domain: Optional[str] = None
+    theme: Optional[str] = None
 
 
 class DealUpdate(BaseModel):
@@ -43,6 +57,8 @@ class DealUpdate(BaseModel):
     owner: Optional[str] = None
     notes: Optional[str] = None
     position: Optional[int] = None
+    domain: Optional[str] = None
+    theme: Optional[str] = None
 
 
 class DealResponse(BaseModel):
@@ -55,6 +71,8 @@ class DealResponse(BaseModel):
     owner: Optional[str] = None
     notes: Optional[str] = None
     position: int = 0
+    domain: Optional[str] = None
+    theme: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

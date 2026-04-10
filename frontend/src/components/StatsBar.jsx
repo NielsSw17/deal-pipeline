@@ -1,14 +1,4 @@
-const STAGES = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed', 'Lost']
-
-const STAGE_COLORS = {
-  Sourcing: '#3b82f6',
-  Screening: '#8b5cf6',
-  IC: '#f59e0b',
-  'Due Diligence': '#f97316',
-  Signed: '#06b6d4',
-  Closed: '#10b981',
-  Lost: '#94a3b8',
-}
+import { STAGES, STAGE_COLORS } from '../constants'
 
 export default function StatsBar({ deals }) {
   const activeDeals = deals.filter(d => d.stage !== 'Lost')
@@ -30,15 +20,15 @@ export default function StatsBar({ deals }) {
           €{totalEV >= 1000 ? `${(totalEV / 1000).toFixed(1)}B` : `${totalEV.toFixed(0)}m`}
         </span>
       </div>
-      {STAGES.map(stage => (
-        countByStage[stage] > 0 && (
+      {STAGES.map(stage =>
+        countByStage[stage] > 0 ? (
           <div key={stage} className="stat-item">
-            <div className="stat-dot" style={{ background: STAGE_COLORS[stage] }} />
+            <div className="stat-dot" style={{ background: STAGE_COLORS[stage].bar }} />
             <span className="stat-label">{stage}</span>
             <span className="stat-value">{countByStage[stage]}</span>
           </div>
-        )
-      ))}
+        ) : null
+      )}
     </div>
   )
 }

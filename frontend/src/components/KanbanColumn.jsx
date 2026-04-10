@@ -1,28 +1,17 @@
 import { useDroppable } from '@dnd-kit/core'
+import { STAGE_COLORS } from '../constants'
 import DealCard from './DealCard'
-
-const STAGE_COLORS = {
-  Sourcing: '#3b82f6',
-  Screening: '#8b5cf6',
-  IC: '#f59e0b',
-  'Due Diligence': '#f97316',
-  Signed: '#06b6d4',
-  Closed: '#10b981',
-  Lost: '#94a3b8',
-}
 
 export default function KanbanColumn({ stage, deals, onEditDeal, onDeleteDeal }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage })
 
   const totalEV = deals.reduce((s, d) => s + (d.ev || 0), 0)
+  const sc = STAGE_COLORS[stage] || STAGE_COLORS.Lost
 
   return (
     <div className={`kanban-column${isOver ? ' is-over' : ''}`}>
       <div className="column-header">
-        <div
-          className="column-color-bar"
-          style={{ background: STAGE_COLORS[stage] || '#94a3b8' }}
-        />
+        <div className="column-color-bar" style={{ background: sc.bar }} />
         <span className="column-name">{stage}</span>
         <span className="column-count">{deals.length}</span>
       </div>

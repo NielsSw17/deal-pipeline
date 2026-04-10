@@ -1,80 +1,83 @@
 import { useState, useMemo } from 'react'
-
-const STAGES = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed', 'Lost']
-
-const STAGE_COLORS = {
-  Sourcing: { bg: '#eff6ff', color: '#3b82f6' },
-  Screening: { bg: '#f5f3ff', color: '#8b5cf6' },
-  IC: { bg: '#fffbeb', color: '#f59e0b' },
-  'Due Diligence': { bg: '#fff7ed', color: '#f97316' },
-  Signed: { bg: '#ecfeff', color: '#06b6d4' },
-  Closed: { bg: '#f0fdf4', color: '#10b981' },
-  Lost: { bg: '#f8fafc', color: '#94a3b8' },
-}
+import { STAGES, STAGE_COLORS, THEMES, OWNER_COLORS } from '../constants'
 
 const COLS = [
   { key: 'company_name', label: 'Company' },
-  { key: 'stage', label: 'Stage' },
-  { key: 'sector', label: 'Sector' },
-  { key: 'ev', label: 'EV (€m)' },
-  { key: 'country', label: 'Country' },
-  { key: 'owner', label: 'Owner' },
+  { key: 'stage',        label: 'Stage' },
+  { key: 'theme',        label: 'Theme' },
+  { key: 'sector',       label: 'Sector' },
+  { key: 'ev',           label: 'EV (€m)' },
+  { key: 'country',      label: 'Country' },
+  { key: 'owner',        label: 'Owner' },
 ]
+
+function StageBadge({ stage }) {
+  const sc = STAGE_COLORS[stage] || STAGE_COLORS.Lost
+  return (
+    <span className="stage-badge" style={{ background: sc.bg, color: sc.color }}>
+      {stage}
+    </span>
+  )
+}
+
+function ThemeBadge({ theme }) {
+  if (!theme) return <span style={{ color: 'var(--text-light)' }}>—</span>
+  const meta = THEMES.find(t => t.value === theme)
+  if (!meta) return <span>{theme}</span>
+  return (
+    <span className="theme-pill" style={{ background: meta.bg, color: meta.color }}>
+      <span className="theme-dot" style={{ background: meta.dot }} />
+      {theme}
+    </span>
+  )
+}
+
+function OwnerCell({ owner }) {
+  if (!owner) return <span style={{ color: 'var(--text-light)' }}>—</span>
+  const color = OWNER_COLORS[owner] || '#64748b'
+  const initials = owner.slice(0, 2).toUpperCase()
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+      <div className="owner-avatar" style={{ background: color, width: 22, height: 22, fontSize: 10 }}>
+        {initials}
+      </div>
+      {owner}
+    </div>
+  )
+}
 
 export default function TableView({ deals, onEditDeal, onDeleteDeal }) {
   const [sortKey, setSortKey] = useState('company_name')
   const [sortDir, setSortDir] = useState('asc')
   const [stageFilter, setStageFilter] = useState('All')
-  const [search, setSearch] = useState('')
 
   const toggleSort = (key) => {
-    if (sortKey === key) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortKey(key)
-      setSortDir('asc')
-    }
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
   }
 
   const filtered = useMemo(() => {
     let rows = [...deals]
     if (stageFilter !== 'All') rows = rows.filter(d => d.stage === stageFilter)
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      rows = rows.filter(d =>
-        d.company_name?.toLowerCase().includes(q) ||
-        d.sector?.toLowerCase().includes(q) ||
-        d.country?.toLowerCase().includes(q) ||
-        d.owner?.toLowerCase().includes(q)
-      )
-    }
     rows.sort((a, b) => {
       let va = a[sortKey] ?? ''
       let vb = b[sortKey] ?? ''
-      if (sortKey === 'stage') {
-        va = STAGES.indexOf(va)
-        vb = STAGES.indexOf(vb)
-      }
+      if (sortKey === 'stage') { va = STAGES.indexOf(va); vb = STAGES.indexOf(vb) }
       if (va < vb) return sortDir === 'asc' ? -1 : 1
       if (va > vb) return sortDir === 'asc' ? 1 : -1
       return 0
     })
     return rows
-  }, [deals, stageFilter, search, sortKey, sortDir])
+  }, [deals, stageFilter, sortKey, sortDir])
 
   const arrow = (key) => sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
+
+  const totalEV = filtered.filter(d => d.stage !== 'Lost').reduce((s, d) => s + (d.ev || 0), 0)
 
   return (
     <div>
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center' }}>
-        <input
-          className="form-input"
-          style={{ maxWidth: 240 }}
-          placeholder="Search deals…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
         <select
           className="form-select"
           style={{ maxWidth: 180 }}
@@ -86,6 +89,7 @@ export default function TableView({ deals, onEditDeal, onDeleteDeal }) {
         </select>
         <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)' }}>
           {filtered.length} deal{filtered.length !== 1 ? 's' : ''}
+          {totalEV > 0 && ` · €${totalEV >= 1000 ? `${(totalEV / 1000).toFixed(1)}B` : `${totalEV.toFixed(0)}m`} EV`}
         </span>
       </div>
 
@@ -111,47 +115,50 @@ export default function TableView({ deals, onEditDeal, onDeleteDeal }) {
                   </th>
                 ))}
                 <th>Notes</th>
-                <th style={{ width: 120 }}>Actions</th>
+                <th style={{ width: 110 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(deal => {
-                const sc = STAGE_COLORS[deal.stage] || STAGE_COLORS.Lost
-                return (
-                  <tr key={deal.id}>
-                    <td style={{ fontWeight: 600 }}>{deal.company_name}</td>
-                    <td>
-                      <span
-                        className="stage-badge"
-                        style={{ background: sc.bg, color: sc.color }}
-                      >
-                        {deal.stage}
-                      </span>
-                    </td>
-                    <td>{deal.sector || <span style={{ color: 'var(--text-light)' }}>—</span>}</td>
-                    <td>
-                      {deal.ev != null
-                        ? <span style={{ fontWeight: 600, color: '#16a34a' }}>€{deal.ev}m</span>
-                        : <span style={{ color: 'var(--text-light)' }}>—</span>
-                      }
-                    </td>
-                    <td>{deal.country || <span style={{ color: 'var(--text-light)' }}>—</span>}</td>
-                    <td>{deal.owner || <span style={{ color: 'var(--text-light)' }}>—</span>}</td>
-                    <td style={{ maxWidth: 200 }}>
-                      {deal.notes
-                        ? <span style={{ color: 'var(--text-muted)', fontSize: 12, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{deal.notes}</span>
-                        : <span style={{ color: 'var(--text-light)' }}>—</span>
-                      }
-                    </td>
-                    <td>
-                      <div className="table-actions">
-                        <button className="btn btn-ghost btn-sm" onClick={() => onEditDeal(deal)}>Edit</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => onDeleteDeal(deal.id)}>Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
+              {filtered.map(deal => (
+                <tr key={deal.id}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                      {deal.domain ? (
+                        <img
+                          src={`https://logo.clearbit.com/${deal.domain}`}
+                          alt=""
+                          className="table-logo"
+                          onError={e => { e.target.style.display = 'none' }}
+                        />
+                      ) : null}
+                      <span style={{ fontWeight: 600 }}>{deal.company_name}</span>
+                    </div>
+                  </td>
+                  <td><StageBadge stage={deal.stage} /></td>
+                  <td><ThemeBadge theme={deal.theme} /></td>
+                  <td>{deal.sector || <span style={{ color: 'var(--text-light)' }}>—</span>}</td>
+                  <td>
+                    {deal.ev != null
+                      ? <span style={{ fontWeight: 600, color: '#16a34a' }}>€{deal.ev}m</span>
+                      : <span style={{ color: 'var(--text-light)' }}>—</span>
+                    }
+                  </td>
+                  <td>{deal.country || <span style={{ color: 'var(--text-light)' }}>—</span>}</td>
+                  <td><OwnerCell owner={deal.owner} /></td>
+                  <td style={{ maxWidth: 180 }}>
+                    {deal.notes
+                      ? <span style={{ color: 'var(--text-muted)', fontSize: 12, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{deal.notes}</span>
+                      : <span style={{ color: 'var(--text-light)' }}>—</span>
+                    }
+                  </td>
+                  <td>
+                    <div className="table-actions">
+                      <button className="btn btn-ghost btn-sm" onClick={() => onEditDeal(deal)}>Edit</button>
+                      <button className="btn btn-danger btn-sm" onClick={() => onDeleteDeal(deal.id)}>Del</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         )}

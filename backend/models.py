@@ -15,5 +15,7 @@ class Deal(Base):
     owner = Column(String, nullable=True)
     notes = Column(String, nullable=True)
     position = Column(Integer, default=0, nullable=False)
+    domain = Column(String, nullable=True)
+    theme = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
