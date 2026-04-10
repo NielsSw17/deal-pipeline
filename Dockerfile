@@ -22,6 +22,9 @@ COPY backend/ ./
 # Copy built frontend into backend's static folder
 COPY --from=frontend-build /frontend/dist ./static
 
+RUN mkdir -p /data
+ENV DATABASE_URL=sqlite:////data/deals.db
+
 EXPOSE 8000
 
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
