@@ -46,7 +46,7 @@ function OwnerCell({ owner }) {
   )
 }
 
-export default function TableView({ deals, onEditDeal, onDeleteDeal }) {
+export default function TableView({ deals, onEditDeal, onDeleteDeal, onViewDeal }) {
   const [sortKey, setSortKey] = useState('company_name')
   const [sortDir, setSortDir] = useState('asc')
   const [stageFilter, setStageFilter] = useState('All')
@@ -122,7 +122,10 @@ export default function TableView({ deals, onEditDeal, onDeleteDeal }) {
               {filtered.map(deal => (
                 <tr key={deal.id}>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: onViewDeal ? 'pointer' : 'default' }}
+                      onClick={() => onViewDeal && onViewDeal(deal)}
+                    >
                       {deal.domain ? (
                         <img
                           src={`https://logo.clearbit.com/${deal.domain}`}

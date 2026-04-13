@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { api } from './api'
-import { TEAM, THEMES } from './constants'
+import { TEAM, THEMES, STAGE_ORDER, STAGE_GATES } from './constants'
 import KanbanBoard from './components/KanbanBoard'
 import TableView from './components/TableView'
 import DealModal from './components/DealModal'
+import DealDetailPanel from './components/DealDetailPanel'
+import StageGateModal from './components/StageGateModal'
 import StatsBar from './components/StatsBar'
 import DTELogo from './components/DTELogo'
 
@@ -17,8 +19,14 @@ export default function App() {
   const [editingDeal, setEditingDeal] = useState(null)
   const [toasts, setToasts]         = useState([])
 
-  // Global filters (apply to both kanban + table)
-  const [search, setSearch]         = useState('')
+  // Detail panel
+  const [detailDeal, setDetailDeal] = useState(null)
+
+  // Stage gate
+  const [pendingGate, setPendingGate] = useState(null) // { dealId, fromStage, toStage }
+
+  // Global filters
+  const [search, setSearch]           = useState('')
   const [ownerFilter, setOwnerFilter] = useState('All')
   const [themeFilter, setThemeFilter] = useState('All')
 
@@ -55,6 +63,9 @@ export default function App() {
     try {
       const deal = await api.updateDeal(id, data)
       setDeals(d => d.map(x => x.id === id ? deal : x))
+      // Keep detail panel in sync
+      setDetailDeal(prev => prev?.id === id ? deal : prev)
+      return deal
     } catch (e) {
       showToast(e.message, 'error')
     }
@@ -66,13 +77,29 @@ export default function App() {
     try {
       await api.deleteDeal(id)
       setDeals(d => d.filter(x => x.id !== id))
+      if (detailDeal?.id === id) setDetailDeal(null)
       showToast('Deal deleted')
     } catch (e) {
       showToast(e.message, 'error')
     }
   }
 
+  // Stage gate interception: check if transition requires a gate
   const handleDragMove = useCallback(async (dealId, newStage) => {
+    const deal = deals.find(d => d.id === dealId)
+    if (!deal) return
+
+    const fromIdx = STAGE_ORDER.indexOf(deal.stage)
+    const toIdx   = STAGE_ORDER.indexOf(newStage)
+    const gateKey = `${deal.stage}→${newStage}`
+
+    // Only gate forward single-step progressions that have a defined gate
+    if (toIdx === fromIdx + 1 && STAGE_GATES[gateKey]) {
+      setPendingGate({ dealId, fromStage: deal.stage, toStage: newStage })
+      return
+    }
+
+    // No gate — apply immediately (optimistic)
     setDeals(d => d.map(x => x.id === dealId ? { ...x, stage: newStage } : x))
     try {
       await api.updateDeal(dealId, { stage: newStage })
@@ -80,10 +107,24 @@ export default function App() {
       showToast(e.message, 'error')
       loadDeals()
     }
-  }, [showToast, loadDeals])
+  }, [deals, showToast, loadDeals])
+
+  const handleGateConfirm = async (payload) => {
+    if (!pendingGate) return
+    const { dealId, toStage } = pendingGate
+    setPendingGate(null)
+    const updated = await handleUpdate(dealId, { ...payload, stage: toStage })
+    if (updated) showToast(`Moved to ${toStage}`)
+  }
+
+  const handleGateCancel = () => setPendingGate(null)
 
   const openAdd  = () => { setEditingDeal(null); setModalOpen(true) }
-  const openEdit = (deal) => { setEditingDeal(deal); setModalOpen(true) }
+  const openEdit = (deal) => {
+    setDetailDeal(null)
+    setEditingDeal(deal)
+    setModalOpen(true)
+  }
   const closeModal = () => { setModalOpen(false); setEditingDeal(null) }
 
   const handleSave = async (data) => {
@@ -91,6 +132,9 @@ export default function App() {
     else await handleCreate(data)
     closeModal()
   }
+
+  const openDetail = (deal) => setDetailDeal(deal)
+  const closeDetail = () => setDetailDeal(null)
 
   // Apply global filters
   const filteredDeals = useMemo(() => {
@@ -111,6 +155,9 @@ export default function App() {
   }, [deals, ownerFilter, themeFilter, search])
 
   const hasFilters = ownerFilter !== 'All' || themeFilter !== 'All' || search.trim()
+
+  // Deal driving the gate modal (needed to pre-fill form)
+  const gatingDeal = pendingGate ? deals.find(d => d.id === pendingGate.dealId) : null
 
   return (
     <>
@@ -194,6 +241,7 @@ export default function App() {
             onUpdateDeal={handleDragMove}
             onEditDeal={openEdit}
             onDeleteDeal={handleDelete}
+            onViewDeal={openDetail}
           />
         </div>
       ) : (
@@ -202,16 +250,37 @@ export default function App() {
             deals={filteredDeals}
             onEditDeal={openEdit}
             onDeleteDeal={handleDelete}
+            onViewDeal={openDetail}
           />
         </div>
       )}
 
-      {/* ── Modal ── */}
+      {/* ── Edit modal ── */}
       {modalOpen && (
         <DealModal
           deal={editingDeal}
           onSave={handleSave}
           onClose={closeModal}
+        />
+      )}
+
+      {/* ── Stage gate modal ── */}
+      {pendingGate && gatingDeal && (
+        <StageGateModal
+          deal={gatingDeal}
+          fromStage={pendingGate.fromStage}
+          toStage={pendingGate.toStage}
+          onConfirm={handleGateConfirm}
+          onCancel={handleGateCancel}
+        />
+      )}
+
+      {/* ── Detail panel ── */}
+      {detailDeal && (
+        <DealDetailPanel
+          deal={detailDeal}
+          onClose={closeDetail}
+          onEdit={openEdit}
         />
       )}
 

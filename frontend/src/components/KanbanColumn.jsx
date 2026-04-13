@@ -2,7 +2,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { STAGE_COLORS } from '../constants'
 import DealCard from './DealCard'
 
-export default function KanbanColumn({ stage, deals, onEditDeal, onDeleteDeal }) {
+export default function KanbanColumn({ stage, deals, onEditDeal, onDeleteDeal, onViewDeal }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage })
 
   const totalEV = deals.reduce((s, d) => s + (d.ev || 0), 0)
@@ -29,6 +29,7 @@ export default function KanbanColumn({ stage, deals, onEditDeal, onDeleteDeal })
             deal={deal}
             onEdit={onEditDeal}
             onDelete={onDeleteDeal}
+            onView={onViewDeal}
           />
         ))}
       </div>

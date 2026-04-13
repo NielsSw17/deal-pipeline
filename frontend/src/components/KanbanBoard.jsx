@@ -13,7 +13,7 @@ import DealCard from './DealCard'
 
 const STAGES = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed', 'Lost']
 
-export default function KanbanBoard({ deals, onUpdateDeal, onEditDeal, onDeleteDeal }) {
+export default function KanbanBoard({ deals, onUpdateDeal, onEditDeal, onDeleteDeal, onViewDeal }) {
   const [activeId, setActiveId] = useState(null)
 
   const sensors = useSensors(
@@ -69,6 +69,7 @@ export default function KanbanBoard({ deals, onUpdateDeal, onEditDeal, onDeleteD
             deals={dealsByStage[stage]}
             onEditDeal={onEditDeal}
             onDeleteDeal={onDeleteDeal}
+            onViewDeal={onViewDeal}
           />
         ))}
       </div>

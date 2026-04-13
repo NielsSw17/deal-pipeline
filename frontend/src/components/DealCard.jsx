@@ -56,7 +56,7 @@ function ThemePill({ theme }) {
   )
 }
 
-export default function DealCard({ deal, onEdit, onDelete, isOverlay = false }) {
+export default function DealCard({ deal, onEdit, onDelete, onView, isOverlay = false }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: deal.id,
     disabled: isOverlay,
@@ -68,6 +68,9 @@ export default function DealCard({ deal, onEdit, onDelete, isOverlay = false }) 
 
   const stopAndEdit   = (e) => { e.stopPropagation(); onEdit(deal) }
   const stopAndDelete = (e) => { e.stopPropagation(); onDelete(deal.id) }
+  const handleClick   = () => { if (!isDragging && onView) onView(deal) }
+
+  const isOverdue = deal.next_action_due && new Date(deal.next_action_due) < new Date()
 
   return (
     <div
@@ -78,6 +81,7 @@ export default function DealCard({ deal, onEdit, onDelete, isOverlay = false }) 
         isDragging && !isOverlay ? 'is-dragging' : '',
         isOverlay ? 'is-overlay' : '',
       ].filter(Boolean).join(' ')}
+      onClick={isOverlay ? undefined : handleClick}
       {...(isOverlay ? {} : { ...listeners, ...attributes })}
     >
       {/* Top row: logo + name/sector */}
@@ -103,6 +107,21 @@ export default function DealCard({ deal, onEdit, onDelete, isOverlay = false }) 
 
       {/* Theme pill */}
       {deal.theme && <ThemePill theme={deal.theme} />}
+
+      {/* Next action */}
+      {(deal.next_action || deal.next_action_due) && (
+        <div className={`card-next-action${isOverdue ? ' overdue' : ''}`}>
+          <span className="card-next-action-text">
+            {isOverdue ? '⚠ ' : '→ '}
+            {deal.next_action || 'Follow up'}
+          </span>
+          {deal.next_action_due && (
+            <span className="card-next-action-due">
+              {new Date(deal.next_action_due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Footer: owner avatar + actions */}
       <div className="card-footer">
