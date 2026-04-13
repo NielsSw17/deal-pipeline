@@ -106,3 +106,5 @@ export const COUNTRIES = [
 export const GEOGRAPHIES = ['NL', 'DE', 'BE', 'DK', 'SE', 'NO', 'UK', 'Other']
 
 export const DEAL_SOURCES = ['Outbound', 'Inbound', 'Referral', 'Co-investor']
+
+export const LOST_REASONS = ['Valuation', 'Mandate mismatch', 'Competitive', 'No process', 'Management', 'Other']

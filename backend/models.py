@@ -32,6 +32,8 @@ class Deal(Base):
     # Next action
     next_action     = Column(String, nullable=True)
     next_action_due = Column(String, nullable=True)
+    # Lost tracking
+    lost_reason   = Column(String, nullable=True)
     created_at    = Column(DateTime, server_default=func.now())
     updated_at    = Column(DateTime, onupdate=func.now())
 

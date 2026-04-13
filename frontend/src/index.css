@@ -1352,3 +1352,159 @@ body {
 .interaction-note { font-size: 12px; color: var(--text-muted); width: 100%; margin-top: 1px; }
 
 .interaction-edit-wrap { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+
+/* ── LOST MODAL ──────────────────────────────────────── */
+.lost-modal { max-width: 460px; }
+
+.lost-reasons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.lost-reason-btn {
+  padding: 12px 16px;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color .15s, background .15s, color .15s;
+  color: var(--text-muted);
+}
+.lost-reason-btn:hover { border-color: #94a3b8; color: var(--text); }
+.lost-reason-btn.selected { border-color: var(--danger); background: var(--danger-light); color: var(--danger); font-weight: 600; }
+
+/* ── LOST DEALS VIEW ─────────────────────────────────── */
+.lost-tab { position: relative; }
+.lost-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #94a3b8;
+  color: white;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: 4px;
+  line-height: 1;
+}
+.view-toggle button.active.lost-tab .lost-count-badge { background: var(--primary); }
+
+.lost-view { }
+.lost-view-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.lost-view-count  { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+
+.lost-row td { opacity: .85; }
+.lost-company-link { display: flex; align-items: center; gap: 9px; cursor: pointer; font-weight: 600; }
+.lost-company-link:hover { color: var(--primary); }
+
+.lost-reason-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── EXPORT DROPDOWN ─────────────────────────────────── */
+.export-wrap { position: relative; }
+.export-btn  { white-space: nowrap; }
+.export-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 150;
+  min-width: 230px;
+  overflow: hidden;
+}
+.export-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text);
+  transition: background .1s;
+}
+.export-option:hover { background: var(--bg); }
+
+/* ── ANALYTICS PAGE ──────────────────────────────────── */
+.analytics-container { padding: 20px 24px; overflow-y: auto; height: calc(100vh - 120px); }
+
+.analytics-kpis {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.analytics-kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 110px;
+  flex: 1;
+}
+.analytics-kpi-value { font-size: 22px; font-weight: 700; color: var(--text); }
+.analytics-kpi-label { font-size: 11px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+}
+.chart-card--wide { grid-column: 1 / -1; }
+.chart-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+.chart-note  { font-size: 10px; color: var(--text-light); margin-top: 8px; }
+.chart-empty { font-size: 12px; color: var(--text-light); padding: 8px 0; }
+
+/* Funnel/bar rows */
+.funnel-rows { display: flex; flex-direction: column; gap: 8px; }
+
+.funnel-row {
+  display: grid;
+  grid-template-columns: 108px 1fr 56px 42px;
+  align-items: center;
+  gap: 8px;
+}
+.funnel-label { font-size: 12px; color: var(--text-muted); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.funnel-bar-track { height: 10px; background: var(--bg); border-radius: 99px; overflow: hidden; }
+.funnel-bar-fill  { height: 100%; border-radius: 99px; transition: width .4s ease; min-width: 2px; }
+.funnel-count { font-size: 12px; font-weight: 700; color: var(--text); text-align: right; }
+.funnel-conv  { font-size: 11px; font-weight: 600; color: #16a34a; text-align: right; }
+.funnel-conv.zero { color: var(--text-light); }
+.funnel-conv.muted { color: var(--text-light); font-weight: 400; }
+
+/* SVG trend chart */
+.trend-svg { width: 100%; height: auto; display: block; }

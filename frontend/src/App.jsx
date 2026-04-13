@@ -1,23 +1,27 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { api } from './api'
 import { TEAM, THEMES, STAGE_ORDER, STAGE_GATES } from './constants'
+import { exportPipelineToExcel, exportDealToPDF } from './utils/export'
 import KanbanBoard from './components/KanbanBoard'
 import TableView from './components/TableView'
 import DealModal from './components/DealModal'
 import DealDetailPanel from './components/DealDetailPanel'
 import StageGateModal from './components/StageGateModal'
+import LostModal from './components/LostModal'
+import LostDealsView from './components/LostDealsView'
+import AnalyticsPage from './components/AnalyticsPage'
 import StatsBar from './components/StatsBar'
 import DTELogo from './components/DTELogo'
 
 let toastId = 0
 
 export default function App() {
-  const [deals, setDeals]           = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [view, setView]             = useState('kanban')
-  const [modalOpen, setModalOpen]   = useState(false)
+  const [deals, setDeals]             = useState([])
+  const [loading, setLoading]         = useState(true)
+  const [view, setView]               = useState('kanban') // kanban | table | analytics | lost
+  const [modalOpen, setModalOpen]     = useState(false)
   const [editingDeal, setEditingDeal] = useState(null)
-  const [toasts, setToasts]         = useState([])
+  const [toasts, setToasts]           = useState([])
 
   // Detail panel
   const [detailDeal, setDetailDeal] = useState(null)
@@ -25,7 +29,14 @@ export default function App() {
   // Stage gate
   const [pendingGate, setPendingGate] = useState(null) // { dealId, fromStage, toStage }
 
-  // Global filters
+  // Lost modal
+  const [pendingLost, setPendingLost] = useState(null) // { dealId, fromStage }
+
+  // Export dropdown
+  const [exportOpen, setExportOpen] = useState(false)
+  const exportRef = useRef(null)
+
+  // Global filters (apply only to kanban/table)
   const [search, setSearch]           = useState('')
   const [ownerFilter, setOwnerFilter] = useState('All')
   const [themeFilter, setThemeFilter] = useState('All')
@@ -49,6 +60,13 @@ export default function App() {
 
   useEffect(() => { loadDeals() }, [loadDeals])
 
+  // Close export dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => { if (exportRef.current && !exportRef.current.contains(e.target)) setExportOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
   const handleCreate = async (data) => {
     try {
       const deal = await api.createDeal(data)
@@ -63,7 +81,6 @@ export default function App() {
     try {
       const deal = await api.updateDeal(id, data)
       setDeals(d => d.map(x => x.id === id ? deal : x))
-      // Keep detail panel in sync
       setDetailDeal(prev => prev?.id === id ? deal : prev)
       return deal
     } catch (e) {
@@ -84,22 +101,28 @@ export default function App() {
     }
   }
 
-  // Stage gate interception: check if transition requires a gate
+  // Stage gate + lost interception
   const handleDragMove = useCallback(async (dealId, newStage) => {
     const deal = deals.find(d => d.id === dealId)
     if (!deal) return
+
+    // Moving to Lost — capture reason
+    if (newStage === 'Lost') {
+      setPendingLost({ dealId, fromStage: deal.stage })
+      return
+    }
 
     const fromIdx = STAGE_ORDER.indexOf(deal.stage)
     const toIdx   = STAGE_ORDER.indexOf(newStage)
     const gateKey = `${deal.stage}→${newStage}`
 
-    // Only gate forward single-step progressions that have a defined gate
+    // Forward single-step gate
     if (toIdx === fromIdx + 1 && STAGE_GATES[gateKey]) {
       setPendingGate({ dealId, fromStage: deal.stage, toStage: newStage })
       return
     }
 
-    // No gate — apply immediately (optimistic)
+    // No gate — optimistic move
     setDeals(d => d.map(x => x.id === dealId ? { ...x, stage: newStage } : x))
     try {
       await api.updateDeal(dealId, { stage: newStage })
@@ -116,15 +139,26 @@ export default function App() {
     const updated = await handleUpdate(dealId, { ...payload, stage: toStage })
     if (updated) showToast(`Moved to ${toStage}`)
   }
-
   const handleGateCancel = () => setPendingGate(null)
 
-  const openAdd  = () => { setEditingDeal(null); setModalOpen(true) }
-  const openEdit = (deal) => {
-    setDetailDeal(null)
-    setEditingDeal(deal)
-    setModalOpen(true)
+  const handleLostConfirm = async (reason) => {
+    if (!pendingLost) return
+    const { dealId } = pendingLost
+    setPendingLost(null)
+    const updated = await handleUpdate(dealId, { stage: 'Lost', lost_reason: reason })
+    if (updated) showToast('Deal marked as lost')
   }
+  const handleLostCancel = () => setPendingLost(null)
+
+  // Reactivate a lost deal — move back to Sourcing
+  const handleReactivate = async (deal) => {
+    if (!window.confirm(`Reactivate "${deal.company_name}" back to Sourcing?`)) return
+    const updated = await handleUpdate(deal.id, { stage: 'Sourcing', lost_reason: null })
+    if (updated) { showToast(`${deal.company_name} reactivated`); setView('kanban') }
+  }
+
+  const openAdd  = () => { setEditingDeal(null); setModalOpen(true) }
+  const openEdit = (deal) => { setDetailDeal(null); setEditingDeal(deal); setModalOpen(true) }
   const closeModal = () => { setModalOpen(false); setEditingDeal(null) }
 
   const handleSave = async (data) => {
@@ -133,12 +167,12 @@ export default function App() {
     closeModal()
   }
 
-  const openDetail = (deal) => setDetailDeal(deal)
+  const openDetail  = (deal) => setDetailDeal(deal)
   const closeDetail = () => setDetailDeal(null)
 
-  // Apply global filters
+  // Apply global filters (only for kanban/table)
   const filteredDeals = useMemo(() => {
-    let rows = deals
+    let rows = deals.filter(d => d.stage !== 'Lost')
     if (ownerFilter !== 'All') rows = rows.filter(d => d.owner === ownerFilter)
     if (themeFilter !== 'All') rows = rows.filter(d => d.theme === themeFilter)
     if (search.trim()) {
@@ -154,10 +188,13 @@ export default function App() {
     return rows
   }, [deals, ownerFilter, themeFilter, search])
 
+  const lostDeals  = useMemo(() => deals.filter(d => d.stage === 'Lost'), [deals])
   const hasFilters = ownerFilter !== 'All' || themeFilter !== 'All' || search.trim()
 
-  // Deal driving the gate modal (needed to pre-fill form)
   const gatingDeal = pendingGate ? deals.find(d => d.id === pendingGate.dealId) : null
+  const lostingDeal = pendingLost ? deals.find(d => d.id === pendingLost.dealId) : null
+
+  const showFilters = view === 'kanban' || view === 'table'
 
   return (
     <>
@@ -171,69 +208,96 @@ export default function App() {
 
         <div className="navbar-spacer" />
 
-        {/* Global filters */}
-        <div className="navbar-filters">
-          <div className="search-wrap">
-            <svg className="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input
-              className="form-input search-input"
-              placeholder="Search…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-          </div>
+        {/* Global filters — only in board/table view */}
+        {showFilters && (
+          <div className="navbar-filters">
+            <div className="search-wrap">
+              <svg className="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <input
+                className="form-input search-input"
+                placeholder="Search…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
 
-          <select
-            className="form-select filter-select"
-            value={ownerFilter}
-            onChange={e => setOwnerFilter(e.target.value)}
-          >
-            <option value="All">All owners</option>
-            {TEAM.map(m => <option key={m}>{m}</option>)}
-          </select>
-
-          <select
-            className="form-select filter-select"
-            value={themeFilter}
-            onChange={e => setThemeFilter(e.target.value)}
-          >
-            <option value="All">All themes</option>
-            {THEMES.map(t => <option key={t.value}>{t.value}</option>)}
-          </select>
-
-          {hasFilters && (
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => { setSearch(''); setOwnerFilter('All'); setThemeFilter('All') }}
+            <select
+              className="form-select filter-select"
+              value={ownerFilter}
+              onChange={e => setOwnerFilter(e.target.value)}
             >
-              Clear
-            </button>
+              <option value="All">All owners</option>
+              {TEAM.map(m => <option key={m}>{m}</option>)}
+            </select>
+
+            <select
+              className="form-select filter-select"
+              value={themeFilter}
+              onChange={e => setThemeFilter(e.target.value)}
+            >
+              <option value="All">All themes</option>
+              {THEMES.map(t => <option key={t.value}>{t.value}</option>)}
+            </select>
+
+            {hasFilters && (
+              <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(''); setOwnerFilter('All'); setThemeFilter('All') }}>
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* View switcher */}
+        <div className="view-toggle">
+          <button className={view === 'kanban'    ? 'active' : ''} onClick={() => setView('kanban')}>▦ Board</button>
+          <button className={view === 'table'     ? 'active' : ''} onClick={() => setView('table')}>☰ Table</button>
+          <button className={view === 'analytics' ? 'active' : ''} onClick={() => setView('analytics')}>📊 Analytics</button>
+          <button
+            className={view === 'lost' ? 'active lost-tab' : 'lost-tab'}
+            onClick={() => setView('lost')}
+          >
+            Lost{lostDeals.length > 0 && <span className="lost-count-badge">{lostDeals.length}</span>}
+          </button>
+        </div>
+
+        {/* Export dropdown */}
+        <div className="export-wrap" ref={exportRef}>
+          <button className="btn btn-ghost btn-sm export-btn" onClick={() => setExportOpen(o => !o)}>
+            Export ↓
+          </button>
+          {exportOpen && (
+            <div className="export-dropdown">
+              <button
+                className="export-option"
+                onClick={() => { exportPipelineToExcel(deals); setExportOpen(false) }}
+              >
+                📊 Export to Excel (.xlsx)
+              </button>
+              {detailDeal && (
+                <button
+                  className="export-option"
+                  onClick={async () => {
+                    setExportOpen(false)
+                    const [n, c] = await Promise.all([api.getNotes(detailDeal.id), api.getContacts(detailDeal.id)])
+                    exportDealToPDF(detailDeal, n, c)
+                  }}
+                >
+                  📄 Export deal as PDF
+                </button>
+              )}
+            </div>
           )}
         </div>
 
-        <div className="view-toggle">
-          <button className={view === 'kanban' ? 'active' : ''} onClick={() => setView('kanban')}>
-            ▦ Board
-          </button>
-          <button className={view === 'table' ? 'active' : ''} onClick={() => setView('table')}>
-            ☰ Table
-          </button>
-        </div>
-
-        <button className="btn btn-primary" onClick={openAdd}>
-          + Add Deal
-        </button>
+        <button className="btn btn-primary" onClick={openAdd}>+ Add Deal</button>
       </nav>
 
-      {/* ── Stats bar ── */}
-      <StatsBar deals={deals} />
+      {/* ── Stats bar (hide in analytics/lost) ── */}
+      {(view === 'kanban' || view === 'table') && <StatsBar deals={deals} />}
 
       {/* ── Main content ── */}
       {loading ? (
-        <div className="loading-state">
-          <div className="spinner" />
-          <span>Loading pipeline…</span>
-        </div>
+        <div className="loading-state"><div className="spinner" /><span>Loading pipeline…</span></div>
       ) : view === 'kanban' ? (
         <div className="board-container">
           <KanbanBoard
@@ -244,7 +308,7 @@ export default function App() {
             onViewDeal={openDetail}
           />
         </div>
-      ) : (
+      ) : view === 'table' ? (
         <div className="table-container">
           <TableView
             deals={filteredDeals}
@@ -253,16 +317,22 @@ export default function App() {
             onViewDeal={openDetail}
           />
         </div>
+      ) : view === 'analytics' ? (
+        <div className="analytics-container">
+          <AnalyticsPage deals={deals} />
+        </div>
+      ) : (
+        <div className="table-container">
+          <LostDealsView
+            deals={lostDeals}
+            onReactivate={handleReactivate}
+            onViewDeal={openDetail}
+          />
+        </div>
       )}
 
       {/* ── Edit modal ── */}
-      {modalOpen && (
-        <DealModal
-          deal={editingDeal}
-          onSave={handleSave}
-          onClose={closeModal}
-        />
-      )}
+      {modalOpen && <DealModal deal={editingDeal} onSave={handleSave} onClose={closeModal} />}
 
       {/* ── Stage gate modal ── */}
       {pendingGate && gatingDeal && (
@@ -272,6 +342,15 @@ export default function App() {
           toStage={pendingGate.toStage}
           onConfirm={handleGateConfirm}
           onCancel={handleGateCancel}
+        />
+      )}
+
+      {/* ── Lost modal ── */}
+      {pendingLost && lostingDeal && (
+        <LostModal
+          deal={lostingDeal}
+          onConfirm={handleLostConfirm}
+          onCancel={handleLostCancel}
         />
       )}
 

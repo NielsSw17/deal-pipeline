@@ -37,6 +37,7 @@ def _migrate():
             ("close_date",      "TEXT"),
             ("next_action",     "TEXT"),
             ("next_action_due", "TEXT"),
+            ("lost_reason",     "TEXT"),
         ]
         for col, typedef in new_cols:
             if col not in existing:
@@ -141,6 +142,7 @@ class DealBase(BaseModel):
     close_date:     Optional[str]   = None
     next_action:    Optional[str]   = None
     next_action_due:Optional[str]   = None
+    lost_reason:    Optional[str]   = None
 
 
 class DealCreate(DealBase):
@@ -171,11 +173,14 @@ class DealUpdate(BaseModel):
     close_date:     Optional[str]   = None
     next_action:    Optional[str]   = None
     next_action_due:Optional[str]   = None
+    lost_reason:    Optional[str]   = None
 
 
 class DealResponse(DealBase):
-    id:       int
-    position: int = 0
+    id:         int
+    position:   int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
 
 

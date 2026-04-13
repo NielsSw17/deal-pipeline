@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { STAGES, TEAM, THEMES, SECTORS, COUNTRIES, GEOGRAPHIES, DEAL_SOURCES } from '../constants'
+import { STAGES, TEAM, THEMES, SECTORS, COUNTRIES, GEOGRAPHIES, DEAL_SOURCES, LOST_REASONS } from '../constants'
 
 const EMPTY = {
   company_name:    '',
@@ -22,6 +22,7 @@ const EMPTY = {
   close_date:      '',
   next_action:     '',
   next_action_due: '',
+  lost_reason:     '',
 }
 
 export default function DealModal({ deal, onSave, onClose }) {
@@ -51,6 +52,7 @@ export default function DealModal({ deal, onSave, onClose }) {
       close_date:      deal.close_date      || '',
       next_action:     deal.next_action     || '',
       next_action_due: deal.next_action_due || '',
+      lost_reason:     deal.lost_reason     || '',
     } : EMPTY)
     setErrors({})
   }, [deal])
@@ -97,6 +99,7 @@ export default function DealModal({ deal, onSave, onClose }) {
         close_date:      form.close_date      || null,
         next_action:     form.next_action     || null,
         next_action_due: form.next_action_due || null,
+        lost_reason:     form.lost_reason     || null,
       })
     } finally {
       setSaving(false)
@@ -149,6 +152,16 @@ export default function DealModal({ deal, onSave, onClose }) {
                   {STAGES.map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
+
+              {form.stage === 'Lost' && (
+                <div className="form-group">
+                  <label className="form-label">Lost reason</label>
+                  <select className="form-select" value={form.lost_reason} onChange={set('lost_reason')}>
+                    <option value="">— Select reason —</option>
+                    {LOST_REASONS.map(r => <option key={r}>{r}</option>)}
+                  </select>
+                </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">Sector</label>

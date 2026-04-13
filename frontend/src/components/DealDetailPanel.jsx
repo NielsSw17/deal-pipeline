@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '../api'
 import { TEAM, OWNER_COLORS, THEMES, STAGE_COLORS } from '../constants'
+import { exportDealToPDF } from '../utils/export'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const DOC_CATEGORIES = ['IC Memo', 'Term Sheet', 'NDA', 'Financial Model', 'Management Presentation', 'Other']
@@ -491,6 +492,16 @@ export default function DealDetailPanel({ deal, onClose, onEdit }) {
           </div>
           <div className="detail-header-right">
             <button className="btn btn-ghost btn-sm" onClick={() => onEdit(deal)}>Edit</button>
+            <button
+              className="btn btn-ghost btn-sm"
+              title="Export as PDF"
+              onClick={async () => {
+                const [n, c] = await Promise.all([api.getNotes(deal.id), api.getContacts(deal.id)])
+                exportDealToPDF(deal, n, c)
+              }}
+            >
+              ↓ PDF
+            </button>
             <button className="modal-close" onClick={onClose}>×</button>
           </div>
         </div>
