@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-import os, shutil, uuid
+import os, shutil, uuid, io
 
 import models
 from database import engine, get_db, Base
@@ -48,6 +48,7 @@ def _migrate():
             ("crit_geography",  "BOOLEAN DEFAULT 0"),
             ("crit_majority",   "BOOLEAN DEFAULT 0"),
             ("crit_ticket",     "BOOLEAN DEFAULT 0"),
+            ("ev_range",        "TEXT"),
         ]
         for col, typedef in new_cols:
             col_name = col
@@ -154,6 +155,7 @@ class DealBase(BaseModel):
     stage:          str             = "Sourcing"
     sector:         Optional[str]   = None
     ev:             Optional[float] = None
+    ev_range:       Optional[str]   = None
     country:        Optional[str]   = None
     owner:          Optional[str]   = None
     owners:         Optional[str]   = None   # comma-separated
@@ -194,6 +196,7 @@ class DealUpdate(BaseModel):
     stage:          Optional[str]   = None
     sector:         Optional[str]   = None
     ev:             Optional[float] = None
+    ev_range:       Optional[str]   = None
     country:        Optional[str]   = None
     owner:          Optional[str]   = None
     owners:         Optional[str]   = None
@@ -641,6 +644,250 @@ def serve_upload(filename: str):
     return FileResponse(path)
 
 
+# ── Import helpers ────────────────────────────────────────────────────────────
+
+THEME_MAP = {
+    "energy":      "Energy",
+    "food":        "Food",
+    "health":      "Health",
+    "healthcare":  "Health",
+}
+
+SOURCING_MAP = {
+    "proprietary": "Proprietary",
+    "in-bound":    "Inbound",
+    "inbound":     "Inbound",
+    "auction":     "Auction",
+    "referral":    "Referral",
+    "co-investor": "Co-investor",
+}
+
+LAST_PHASE_STAGE_MAP = {
+    "l":        "Sourcing",
+    "sc":       "Screening",
+    "sl":       "Screening",
+    "wl":       "Screening",
+    "a":        "Screening",
+    "3":        "Screening",
+    "dv":       "IC",
+    "4":        "IC",
+    "an":       "IC",
+    "5":        "IC",
+    "dd":       "Due Diligence",
+    "6":        "Due Diligence",
+    "d":        "Closed",
+    "declined": "Lost",
+}
+
+
+def _ev_range_to_midpoint(ev_str: str) -> Optional[float]:
+    """Parse '10-20' → 15.0, '10' → 10.0. Returns None on failure."""
+    if not ev_str:
+        return None
+    ev_str = str(ev_str).strip()
+    if "-" in ev_str:
+        parts = ev_str.split("-")
+        try:
+            lo, hi = float(parts[0]), float(parts[-1])
+            return (lo + hi) / 2
+        except ValueError:
+            return None
+    try:
+        return float(ev_str)
+    except ValueError:
+        return None
+
+
+def _map_deal_row(row: dict) -> Optional[dict]:
+    """Map a raw Excel row dict to deal fields. Returns None if no company name."""
+    company = str(row.get("Company") or "").strip()
+    if not company:
+        return None
+
+    # Sector → theme
+    sector_raw = str(row.get("Sector") or "").strip().lower()
+    theme = THEME_MAP.get(sector_raw)
+
+    # Country
+    country = str(row.get("Country") or "").strip() or None
+
+    # Type → co_investor field repurposed as deal type — actually store in sourcing/notes
+    deal_type = str(row.get("Type") or "").strip() or None
+
+    # Channel → sourcing
+    channel_raw = str(row.get("Channel") or "").strip().lower()
+    sourcing = SOURCING_MAP.get(channel_raw)
+
+    # Ticket → ev_range + ev midpoint
+    ticket_raw = str(row.get("Ticket (€m)") or row.get("Ticket") or "").strip()
+    ev_range   = ticket_raw if ticket_raw else None
+    ev_mid     = _ev_range_to_midpoint(ticket_raw)
+
+    # Last phase → stage
+    last_phase_raw = str(row.get("Last phase") or "").strip()
+    stage = LAST_PHASE_STAGE_MAP.get(last_phase_raw.lower(), "Sourcing") if last_phase_raw else "Sourcing"
+
+    # Notes — prepend last phase prefix
+    notes_raw = str(row.get("Notes") or "").strip()
+    notes_parts = []
+    if last_phase_raw:
+        notes_parts.append(f"Last phase: {last_phase_raw}.")
+    if deal_type:
+        notes_parts.append(f"Type: {deal_type}.")
+    if notes_raw:
+        notes_parts.append(notes_raw)
+    notes = " ".join(notes_parts) or None
+
+    lost_reason = "Other" if stage == "Lost" else None
+
+    return {
+        "company_name": company,
+        "stage":        stage,
+        "theme":        theme,
+        "country":      country,
+        "sourcing":     sourcing,
+        "ev_range":     ev_range,
+        "ev":           ev_mid,
+        "notes":        notes,
+        "lost_reason":  lost_reason,
+    }
+
+
+def _bulk_import(deals_data: list, db: Session) -> dict:
+    """Insert mapped deal rows into the DB, skipping duplicates. Returns summary."""
+    existing_names = {d.company_name.lower() for d in db.query(models.Deal.company_name).all()}
+    imported = 0
+    skipped  = 0
+
+    for row in deals_data:
+        if not row:
+            continue
+        name_lower = row["company_name"].lower()
+        if name_lower in existing_names:
+            skipped += 1
+            continue
+        stage_count = db.query(models.Deal).filter(models.Deal.stage == row["stage"]).count()
+        db_deal = models.Deal(
+            company_name=row["company_name"],
+            stage       =row["stage"],
+            theme       =row.get("theme"),
+            country     =row.get("country"),
+            sourcing    =row.get("sourcing"),
+            ev_range    =row.get("ev_range"),
+            ev          =row.get("ev"),
+            notes       =row.get("notes"),
+            lost_reason =row.get("lost_reason"),
+            position    =stage_count,
+        )
+        db.add(db_deal)
+        db.flush()
+        _record_stage_entry(db, db_deal.id, db_deal.stage)
+        existing_names.add(name_lower)
+        imported += 1
+
+    db.commit()
+    return {"imported": imported, "skipped": skipped}
+
+
+@app.post("/api/deals/import")
+async def import_deals(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(400, "Only .xlsx files are accepted")
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(500, "openpyxl not installed")
+
+    contents = await file.read()
+    wb = openpyxl.load_workbook(io.BytesIO(contents), data_only=True)
+    ws = wb.active
+
+    # Find header row — first row where first non-empty cell contains "Company"
+    header_row_idx = None
+    headers = []
+    for i, row in enumerate(ws.iter_rows(values_only=True), start=1):
+        cells = [str(c).strip() if c is not None else "" for c in row]
+        if any("Company" in c or "company" in c.lower() for c in cells):
+            header_row_idx = i
+            headers = cells
+            break
+
+    if header_row_idx is None:
+        raise HTTPException(400, "Could not find header row with 'Company' column")
+
+    deals_data = []
+    for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+        if all(c is None or str(c).strip() == "" for c in row):
+            continue
+        row_dict = {headers[i]: (str(row[i]).strip() if row[i] is not None else "") for i in range(min(len(headers), len(row)))}
+        mapped = _map_deal_row(row_dict)
+        if mapped:
+            deals_data.append(mapped)
+
+    result = _bulk_import(deals_data, db)
+    return result
+
+
+# ── Seed ──────────────────────────────────────────────────────────────────────
+
+SEED_DEALS = [
+    {"company_name": "SEA Water",             "stage": "IC",       "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: AN. Awaiting large SEA Water contracts."},
+    {"company_name": "PerfoTec",              "stage": "Sourcing", "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L. Awaiting founder to realize majority sell is necessary."},
+    {"company_name": "HatchTech",             "stage": "Sourcing", "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "20-30", "ev": 25.0, "notes": "Last phase: L. Not yet willing to give up majority."},
+    {"company_name": "VitalFluid",            "stage": "Sourcing", "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L."},
+    {"company_name": "Innax",                 "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "20-30", "ev": 25.0, "notes": "Last phase: L. Waiting for last party to fail negotiations."},
+    {"company_name": "MyMesh",                "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L. Serious interest from founder to sell to DTE."},
+    {"company_name": "Circotex",              "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: L. Aiming to move production to Portugal and US."},
+    {"company_name": "Inspektor",             "stage": "Sourcing", "theme": "Health", "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L. In talks with founders, awaiting production cost decrease."},
+    {"company_name": "Moos",                  "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "20-30", "ev": 25.0, "notes": "Last phase: L. Meetings in November and December 2025."},
+    {"company_name": "ElementAir",            "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: L."},
+    {"company_name": "BatterijVoorThuis",     "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: L. In scope 2027. Type: Add-on."},
+    {"company_name": "Technologies Added",    "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: L. In talks."},
+    {"company_name": "Triple Solar",          "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": None,    "ev": None,  "notes": "Last phase: L."},
+    {"company_name": "Dutch Climate Systems", "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L. Meeting with founder/CEO."},
+    {"company_name": "iXora",                 "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: L."},
+    {"company_name": "XINTC",                 "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: L."},
+    {"company_name": "Valess - Dalco",        "stage": "Sourcing", "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: L. Type: Carve-out. Complex carve-out structure."},
+    {"company_name": "Currentt",              "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L. Type: Add-on. Expecting big sales increase in 2026."},
+    {"company_name": "DutchVentus",           "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L. In scope 2028."},
+    {"company_name": "TTA x ISO",             "stage": "Sourcing", "theme": "Food",   "country": "NL", "sourcing": "Inbound",     "ev_range": "20-30", "ev": 25.0, "notes": "Last phase: L."},
+    {"company_name": "Superlofts",            "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: L. Type: Add-on."},
+    {"company_name": "Suncom",                "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "20-30", "ev": 25.0, "notes": "Last phase: L. Not interested in majority sale."},
+    {"company_name": "PlanetFarms",           "stage": "Sourcing", "theme": "Food",   "country": "IT", "sourcing": "Proprietary", "ev_range": "20-30", "ev": 25.0, "notes": "Last phase: L. Potential deal in 2027."},
+    {"company_name": "Greenphyto",            "stage": "Sourcing", "theme": "Food",   "country": "SG", "sourcing": "Proprietary", "ev_range": "20-30", "ev": 25.0, "notes": "Last phase: L. Awaiting EU entry strategy."},
+    {"company_name": "The Sauce Company",     "stage": "Sourcing", "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L. On hold for commercial uplift."},
+    {"company_name": "AquaBattery",           "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: L. Type: Add-on. Too early, potential deal 2029."},
+    {"company_name": "Onera Health",          "stage": "Sourcing", "theme": "Health", "country": "NL", "sourcing": "Proprietary", "ev_range": "20-30", "ev": 25.0, "notes": "Last phase: L. Too early stage, potential deal 2028."},
+    {"company_name": "Airborne",              "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: L. In talks on buy strategy."},
+    {"company_name": "Orbital Eye",           "stage": "Sourcing", "theme": "Energy", "country": "NL", "sourcing": "Inbound",     "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L. Working towards potential NBO."},
+    {"company_name": "Augmedit",              "stage": "Sourcing", "theme": "Health", "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L. Founder contacted DTE."},
+    {"company_name": "Gilbertt",              "stage": "Sourcing", "theme": "Health", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: L. Type: Add-on. Potential deal 2028."},
+    {"company_name": "Octiva",               "stage": "Lost",     "theme": "Food",   "country": "BE", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: Declined. Stopped - IP issues.", "lost_reason": "Other"},
+    {"company_name": "Ksyos",                "stage": "Lost",     "theme": "Health", "country": "NL", "sourcing": "Inbound",     "ev_range": "20-30", "ev": 25.0, "notes": "Last phase: Declined. Stopped - bid increase request without new info.", "lost_reason": "Valuation too high"},
+    {"company_name": "Nedstack",             "stage": "Lost",     "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: Declined. Not profitable on unit economics.", "lost_reason": "Mandate mismatch"},
+    {"company_name": "Leydenjar",            "stage": "Lost",     "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "20-30", "ev": 25.0, "notes": "Last phase: Declined. Too early and too high valuation.", "lost_reason": "Valuation too high"},
+    {"company_name": "Growy",               "stage": "Lost",     "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: Declined. Too early stage.", "lost_reason": "Too early stage"},
+    {"company_name": "Rocsys",              "stage": "Lost",     "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "20-30", "ev": 25.0, "notes": "Last phase: Declined. Too early stage, potential deal 2028.", "lost_reason": "Too early stage"},
+    {"company_name": "GBM Works",           "stage": "Lost",     "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: Declined. Too early stage.", "lost_reason": "Too early stage"},
+    {"company_name": "Paques Biomaterials", "stage": "Lost",     "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "10-20", "ev": 15.0, "notes": "Last phase: Declined. Too early stage.", "lost_reason": "Too early stage"},
+    {"company_name": "Trabotyx",            "stage": "Lost",     "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: Declined. Type: Add-on. Too early stage.", "lost_reason": "Too early stage"},
+    {"company_name": "Eatch Robot Kitchen", "stage": "Lost",     "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: Declined. Too early stage.", "lost_reason": "Too early stage"},
+    {"company_name": "Sea 02",              "stage": "Lost",     "theme": "Energy", "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: Declined. Too early stage.", "lost_reason": "Too early stage"},
+    {"company_name": "Ningaloo",            "stage": "Lost",     "theme": "Health", "country": "NL", "sourcing": "Inbound",     "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: Declined. Type: Add-on. Too early and out of scope.", "lost_reason": "Mandate mismatch"},
+    {"company_name": "PULS",               "stage": "Lost",     "theme": "Health", "country": "NL", "sourcing": "Inbound",     "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: Declined. Type: Add-on. Too early and out of scope.", "lost_reason": "Mandate mismatch"},
+    {"company_name": "Momo Medical",       "stage": "Sourcing", "theme": "Health", "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L."},
+    {"company_name": "SDS Separation",     "stage": "Sourcing", "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L."},
+    {"company_name": "SusPhos",            "stage": "Sourcing", "theme": "Food",   "country": "NL", "sourcing": "Proprietary", "ev_range": "5-10",  "ev": 7.5,  "notes": "Last phase: L."},
+]
+
+
+@app.post("/api/deals/seed")
+def seed_deals(db: Session = Depends(get_db)):
+    """One-time seed with hardcoded DTE pipeline data. Skips existing companies."""
+    result = _bulk_import(SEED_DEALS, db)
+    return result
+
+
 # ── Analytics ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/analytics/")
@@ -659,7 +906,7 @@ def get_analytics(db: Session = Depends(get_db)):
         conv_pct   = round(count / prev_count * 100) if prev_count else None
         funnel.append({"stage": stage, "count": count, "conversion_pct": conv_pct})
 
-    # 2. Avg days per stage (from history records)
+    # 2. Avg days per stage (from history records) — key: deal_count for frontend
     stage_time = []
     for stage in STAGE_ORDER:
         histories = (
@@ -672,15 +919,14 @@ def get_analytics(db: Session = Depends(get_db)):
         )
         if histories:
             avg = sum((h.exited_at - h.entered_at).days for h in histories) / len(histories)
-            stage_time.append({"stage": stage, "avg_days": round(avg, 1), "sample": len(histories)})
+            stage_time.append({"stage": stage, "avg_days": round(avg, 1), "deal_count": len(histories)})
         else:
-            # Fallback: current deals in this stage, days since created_at
             current = [d for d in deals if d.stage == stage and d.created_at]
             if current:
                 avg = sum((datetime.utcnow() - d.created_at).days for d in current) / len(current)
-                stage_time.append({"stage": stage, "avg_days": round(avg, 1), "sample": len(current)})
+                stage_time.append({"stage": stage, "avg_days": round(avg, 1), "deal_count": len(current)})
             else:
-                stage_time.append({"stage": stage, "avg_days": None, "sample": 0})
+                stage_time.append({"stage": stage, "avg_days": 0, "deal_count": 0})
 
     # 3. Themes
     themes_data = []
@@ -689,21 +935,19 @@ def get_analytics(db: Session = Depends(get_db)):
         total_ev = sum(d.ev or 0 for d in themed)
         themes_data.append({"theme": theme, "count": len(themed), "total_ev": round(total_ev, 1)})
 
-    # 4. Sourcing breakdown
+    # 4. Sourcing breakdown — key must be "sourcing" for frontend
     sourcing_data = []
     for src in ["Proprietary", "Auction", "Referral", "Co-investor"]:
         count = len([d for d in active if d.sourcing == src])
-        sourcing_data.append({"type": src, "count": count})
+        if count > 0:
+            sourcing_data.append({"sourcing": src, "count": count})
 
-    # 5. Criteria completion rate
+    # 5. Criteria completion — return as object {crit_*: count, total_active: n}
     crit_keys = ["thematic", "technology", "commercial", "geography", "majority", "ticket"]
-    criteria_data = []
-    total_deals = len(deals)
+    criteria_obj: dict = {"total_active": len(active)}
     for key in crit_keys:
-        col   = f"crit_{key}"
-        count = sum(1 for d in deals if getattr(d, col))
-        pct   = round(count / total_deals * 100) if total_deals > 0 else 0
-        criteria_data.append({"key": key, "count": count, "pct": pct, "total": total_deals})
+        col = f"crit_{key}"
+        criteria_obj[col] = sum(1 for d in active if getattr(d, col, False))
 
     # 6. Lost reasons
     reason_counts: dict = defaultdict(int)
@@ -715,38 +959,47 @@ def get_analytics(db: Session = Depends(get_db)):
         for k, v in sorted(reason_counts.items(), key=lambda x: -x[1])
     ]
 
-    # 7. Team workload (active deals per person)
-    workload: dict = defaultdict(int)
+    # 7. Team workload — keys: owner, deal_count, total_ev
+    workload: dict = defaultdict(lambda: {"deal_count": 0, "total_ev": 0.0})
     for d in active:
         people = d.owners.split(",") if d.owners else ([d.owner] if d.owner else [])
         for p in people:
             p = p.strip()
             if p:
-                workload[p] += 1
-    team_data = [{"person": k, "count": v} for k, v in sorted(workload.items(), key=lambda x: -x[1])]
+                workload[p]["deal_count"] += 1
+                workload[p]["total_ev"]   += d.ev or 0
+    team_data = [
+        {"owner": k, "deal_count": v["deal_count"], "total_ev": round(v["total_ev"], 1)}
+        for k, v in sorted(workload.items(), key=lambda x: -x[1]["deal_count"])
+    ]
 
-    # 8. Deals per month
+    # 8. Deals per month — key "month" matches frontend
     monthly: dict = defaultdict(int)
     for d in deals:
         if d.created_at:
-            monthly[d.created_at.strftime("%Y-%m")] += 1
+            monthly[d.created_at.strftime("%b %y")] += 1
     monthly_data = [{"month": k, "count": v} for k, v in sorted(monthly.items())]
 
+    # Totals — keys must match frontend KPIRow
+    closed_deals = [d for d in deals if d.stage == "Closed"]
+    win_rate = round(len(closed_deals) / (len(closed_deals) + len(lost)) * 100) if (closed_deals or lost) else 0
+
     return {
-        "funnel":    funnel,
-        "stage_time": stage_time,
-        "themes":    themes_data,
-        "sourcing":  sourcing_data,
-        "criteria":  criteria_data,
-        "lost":      lost_breakdown,
-        "team":      team_data,
-        "monthly":   monthly_data,
+        "funnel":     funnel,
+        "stage_time": [s for s in stage_time if s["deal_count"] > 0],
+        "themes":     themes_data,
+        "sourcing":   sourcing_data,
+        "criteria":   criteria_obj,
+        "lost":       lost_breakdown,
+        "team":       team_data,
+        "monthly":    monthly_data,
         "totals": {
-            "active": len(active),
-            "lost":   len(lost),
-            "total":  len(deals),
-            "pipeline_ev": round(sum(d.ev or 0 for d in active), 1),
-            "closed_ev":   round(sum(d.ev or 0 for d in deals if d.stage == "Closed"), 1),
+            "active_deals": len(active),
+            "lost_count":   len(lost),
+            "total":        len(deals),
+            "pipeline_ev":  round(sum(d.ev or 0 for d in active), 1),
+            "closed_ev":    round(sum(d.ev or 0 for d in closed_deals), 1),
+            "win_rate":     win_rate,
         },
     }
 

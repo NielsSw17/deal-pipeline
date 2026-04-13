@@ -11,6 +11,7 @@ class Deal(Base):
     stage         = Column(String, nullable=False, default="Sourcing")
     sector        = Column(String, nullable=True)
     ev            = Column(Float,  nullable=True)
+    ev_range      = Column(String, nullable=True)   # e.g. "10-20" from import
     country       = Column(String, nullable=True)
     owner         = Column(String, nullable=True)   # legacy single owner
     owners        = Column(String, nullable=True)   # comma-separated multi-owner

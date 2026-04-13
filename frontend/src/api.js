@@ -68,4 +68,18 @@ export const api = {
 
   // Analytics
   getAnalytics: () => request('/analytics/'),
+
+  // Import / seed
+  importDeals: async (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/deals/import', { method: 'POST', body: fd })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Import failed' }))
+      throw new Error(err.detail || 'Import failed')
+    }
+    return res.json()  // { imported, skipped }
+  },
+
+  seedDeals: () => request('/deals/seed', { method: 'POST' }),
 }

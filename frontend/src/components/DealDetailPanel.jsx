@@ -578,7 +578,7 @@ export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate }) {
                   <Field label="Sector"       value={deal.sector} />
                   <Field label="Country"      value={deal.country} />
                   <Field label="Geography"    value={deal.geography} />
-                  <Field label="EV (€m)"      value={deal.ev != null ? `€${deal.ev}m` : null} />
+                  <Field label="EV (€m)"      value={deal.ev_range ? `€${deal.ev_range}m` : deal.ev != null ? `€${deal.ev}m` : null} />
                   <Field label="Revenue (€m)" value={deal.revenue != null ? `€${deal.revenue}m` : null} />
                   <Field label="EBITDA (€m)"  value={deal.ebitda != null ? `€${deal.ebitda}m` : null} />
                   <Field label="Ownership %"  value={deal.ownership_pct != null ? `${deal.ownership_pct}%` : null} />

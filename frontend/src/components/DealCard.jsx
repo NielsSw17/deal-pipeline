@@ -149,7 +149,11 @@ export default function DealCard({ deal, onEdit, onDelete, onView, isOverlay = f
       {/* Theme pill + EV */}
       <div className="card-pills-row">
         {deal.theme && <ThemePill theme={deal.theme} />}
-        {deal.ev != null && <span className="card-tag ev">€{deal.ev}m</span>}
+        {(deal.ev_range || deal.ev != null) && (
+          <span className="card-tag ev">
+            {deal.ev_range ? `€${deal.ev_range}m` : `€${deal.ev}m`}
+          </span>
+        )}
       </div>
 
       {/* Next action */}

@@ -12,6 +12,7 @@ import LostDealsView from './components/LostDealsView'
 import AnalyticsPage from './components/AnalyticsPage'
 import StatsBar from './components/StatsBar'
 import DTELogo from './components/DTELogo'
+import ImportModal from './components/ImportModal'
 
 let toastId = 0
 
@@ -33,8 +34,11 @@ export default function App() {
   const [pendingLost, setPendingLost] = useState(null) // { dealId, fromStage }
 
   // Export dropdown
-  const [exportOpen, setExportOpen] = useState(false)
+  const [exportOpen, setExportOpen]   = useState(false)
   const exportRef = useRef(null)
+
+  // Import modal
+  const [importOpen, setImportOpen]   = useState(false)
 
   // Global filters (apply only to kanban/table)
   const [search, setSearch]           = useState('')
@@ -292,6 +296,7 @@ export default function App() {
           )}
         </div>
 
+        <button className="btn btn-ghost btn-sm" onClick={() => setImportOpen(true)}>↑ Import</button>
         <button className="btn btn-primary" onClick={openAdd}>+ Add Deal</button>
       </nav>
 
@@ -332,6 +337,14 @@ export default function App() {
             onViewDeal={openDetail}
           />
         </div>
+      )}
+
+      {/* ── Import modal ── */}
+      {importOpen && (
+        <ImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={loadDeals}
+        />
       )}
 
       {/* ── Edit modal ── */}
