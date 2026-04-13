@@ -141,11 +141,11 @@ export default function App() {
   }
   const handleGateCancel = () => setPendingGate(null)
 
-  const handleLostConfirm = async (reason) => {
+  const handleLostConfirm = async ({ reason, note }) => {
     if (!pendingLost) return
     const { dealId } = pendingLost
     setPendingLost(null)
-    const updated = await handleUpdate(dealId, { stage: 'Lost', lost_reason: reason })
+    const updated = await handleUpdate(dealId, { stage: 'Lost', lost_reason: reason, lost_note: note || null })
     if (updated) showToast('Deal marked as lost')
   }
   const handleLostCancel = () => setPendingLost(null)
@@ -173,7 +173,10 @@ export default function App() {
   // Apply global filters (only for kanban/table)
   const filteredDeals = useMemo(() => {
     let rows = deals.filter(d => d.stage !== 'Lost')
-    if (ownerFilter !== 'All') rows = rows.filter(d => d.owner === ownerFilter)
+    if (ownerFilter !== 'All') rows = rows.filter(d => {
+      if (d.owners) return d.owners.split(',').map(o => o.trim()).includes(ownerFilter)
+      return d.owner === ownerFilter
+    })
     if (themeFilter !== 'All') rows = rows.filter(d => d.theme === themeFilter)
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -319,7 +322,7 @@ export default function App() {
         </div>
       ) : view === 'analytics' ? (
         <div className="analytics-container">
-          <AnalyticsPage deals={deals} />
+          <AnalyticsPage />
         </div>
       ) : (
         <div className="table-container">
@@ -360,6 +363,7 @@ export default function App() {
           deal={detailDeal}
           onClose={closeDetail}
           onEdit={openEdit}
+          onUpdate={handleUpdate}
         />
       )}
 

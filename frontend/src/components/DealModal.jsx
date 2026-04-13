@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { STAGES, TEAM, THEMES, SECTORS, COUNTRIES, GEOGRAPHIES, DEAL_SOURCES, LOST_REASONS } from '../constants'
+import { STAGES, TEAM, THEMES, SECTORS, COUNTRIES, GEOGRAPHIES, LOST_REASONS, SOURCING_OPTIONS, OWNER_COLORS } from '../constants'
 
 const EMPTY = {
   company_name:    '',
@@ -7,15 +7,15 @@ const EMPTY = {
   sector:          '',
   ev:              '',
   country:         '',
-  owner:           '',
+  owners:          [],   // multi-select
   domain:          '',
   theme:           '',
   notes:           '',
+  sourcing:        '',
   revenue:         '',
   ebitda:          '',
   ownership_pct:   '',
   geography:       '',
-  deal_source:     '',
   co_investor:     '',
   thesis:          '',
   ic_date:         '',
@@ -23,6 +23,43 @@ const EMPTY = {
   next_action:     '',
   next_action_due: '',
   lost_reason:     '',
+}
+
+function parseOwners(deal) {
+  if (!deal) return []
+  // Prefer the new owners field; fall back to owner
+  if (deal.owners) return deal.owners.split(',').map(o => o.trim()).filter(Boolean)
+  if (deal.owner)  return [deal.owner]
+  return []
+}
+
+function OwnerMultiSelect({ selected, onChange }) {
+  return (
+    <div className="owner-multiselect">
+      {TEAM.map(m => {
+        const active = selected.includes(m)
+        const color  = OWNER_COLORS[m] || '#64748b'
+        return (
+          <button
+            key={m}
+            type="button"
+            className={`owner-chip${active ? ' active' : ''}`}
+            style={active ? { background: color, color: '#fff', borderColor: color } : {}}
+            onClick={() => {
+              if (active) onChange(selected.filter(o => o !== m))
+              else        onChange([...selected, m])
+            }}
+          >
+            <span
+              className="owner-chip-dot"
+              style={{ background: active ? '#ffffff66' : color }}
+            />
+            {m}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 export default function DealModal({ deal, onSave, onClose }) {
@@ -37,15 +74,15 @@ export default function DealModal({ deal, onSave, onClose }) {
       sector:          deal.sector          || '',
       ev:              deal.ev              ?? '',
       country:         deal.country         || '',
-      owner:           deal.owner           || '',
+      owners:          parseOwners(deal),
       domain:          deal.domain          || '',
       theme:           deal.theme           || '',
       notes:           deal.notes           || '',
+      sourcing:        deal.sourcing        || '',
       revenue:         deal.revenue         ?? '',
       ebitda:          deal.ebitda          ?? '',
       ownership_pct:   deal.ownership_pct   ?? '',
       geography:       deal.geography       || '',
-      deal_source:     deal.deal_source     || '',
       co_investor:     deal.co_investor     || '',
       thesis:          deal.thesis          || '',
       ic_date:         deal.ic_date         || '',
@@ -78,21 +115,23 @@ export default function DealModal({ deal, onSave, onClose }) {
     if (Object.keys(errs).length) { setErrors(errs); return }
     setSaving(true)
     try {
+      const ownersStr = form.owners.join(',') || null
       await onSave({
         company_name:    form.company_name.trim(),
         stage:           form.stage,
         sector:          form.sector          || null,
         ev:              form.ev !== ''           ? Number(form.ev)            : null,
         country:         form.country         || null,
-        owner:           form.owner           || null,
+        owner:           form.owners[0]       || null,   // keep legacy field
+        owners:          ownersStr,
         domain:          form.domain?.trim().replace(/^https?:\/\//, '').replace(/\/$/, '') || null,
         theme:           form.theme           || null,
         notes:           form.notes           || null,
+        sourcing:        form.sourcing        || null,
         revenue:         form.revenue !== ''      ? Number(form.revenue)       : null,
         ebitda:          form.ebitda !== ''        ? Number(form.ebitda)        : null,
         ownership_pct:   form.ownership_pct !== '' ? Number(form.ownership_pct) : null,
         geography:       form.geography       || null,
-        deal_source:     form.deal_source     || null,
         co_investor:     form.co_investor     || null,
         thesis:          form.thesis          || null,
         ic_date:         form.ic_date         || null,
@@ -241,20 +280,40 @@ export default function DealModal({ deal, onSave, onClose }) {
               {/* ── Deal details ── */}
               <div className="form-section-label full">Deal Details</div>
 
-              <div className="form-group">
-                <label className="form-label">Owner</label>
-                <select className="form-select" value={form.owner} onChange={set('owner')}>
-                  <option value="">— Unassigned —</option>
-                  {TEAM.map(m => <option key={m}>{m}</option>)}
-                </select>
+              {/* Sourcing visual picker */}
+              <div className="form-group full">
+                <label className="form-label">Deal Sourcing</label>
+                <div className="sourcing-picker">
+                  <button
+                    type="button"
+                    className={`sourcing-option none-option${form.sourcing === '' ? ' selected' : ''}`}
+                    onClick={() => setForm(f => ({ ...f, sourcing: '' }))}
+                  >
+                    None
+                  </button>
+                  {SOURCING_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`sourcing-option${form.sourcing === opt.value ? ' selected' : ''}`}
+                      style={form.sourcing === opt.value
+                        ? { background: opt.bg, color: opt.color, borderColor: opt.color }
+                        : {}}
+                      onClick={() => setForm(f => ({ ...f, sourcing: opt.value }))}
+                    >
+                      {opt.value}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="form-group">
-                <label className="form-label">Deal source</label>
-                <select className="form-select" value={form.deal_source} onChange={set('deal_source')}>
-                  <option value="">— Select —</option>
-                  {DEAL_SOURCES.map(s => <option key={s}>{s}</option>)}
-                </select>
+              {/* Team members multi-select */}
+              <div className="form-group full">
+                <label className="form-label">Team Members</label>
+                <OwnerMultiSelect
+                  selected={form.owners}
+                  onChange={owners => setForm(f => ({ ...f, owners }))}
+                />
               </div>
 
               <div className="form-group full">

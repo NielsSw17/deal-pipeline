@@ -38,12 +38,22 @@ def _migrate():
             ("next_action",     "TEXT"),
             ("next_action_due", "TEXT"),
             ("lost_reason",     "TEXT"),
+            # new
+            ("owners",          "TEXT"),
+            ("sourcing",        "TEXT"),
+            ("lost_note",       "TEXT"),
+            ("crit_thematic",   "BOOLEAN DEFAULT 0"),
+            ("crit_technology", "BOOLEAN DEFAULT 0"),
+            ("crit_commercial", "BOOLEAN DEFAULT 0"),
+            ("crit_geography",  "BOOLEAN DEFAULT 0"),
+            ("crit_majority",   "BOOLEAN DEFAULT 0"),
+            ("crit_ticket",     "BOOLEAN DEFAULT 0"),
         ]
         for col, typedef in new_cols:
-            if col not in existing:
+            col_name = col
+            if col_name not in existing:
                 conn.execute(text(f"ALTER TABLE deals ADD COLUMN {col} {typedef}"))
 
-        # deal_notes
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS deal_notes (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,7 +65,6 @@ def _migrate():
             )
         """))
 
-        # deal_documents
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS deal_documents (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,7 +76,6 @@ def _migrate():
             )
         """))
 
-        # deal_contacts
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS deal_contacts (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,7 +88,6 @@ def _migrate():
             )
         """))
 
-        # contact_interactions
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS contact_interactions (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,6 +97,16 @@ def _migrate():
                 date       TEXT NOT NULL,
                 note       TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS deal_stage_history (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                deal_id    INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+                stage      TEXT NOT NULL,
+                entered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                exited_at  DATETIME
             )
         """))
 
@@ -105,7 +122,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Deal Pipeline CRM", version="2.1.0")
+app = FastAPI(title="Deal Pipeline CRM", version="2.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -115,20 +132,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-STAGES = ["Sourcing", "Screening", "IC", "Due Diligence", "Signed", "Closed", "Lost"]
+STAGE_ORDER = ["Sourcing", "Screening", "IC", "Due Diligence", "Signed", "Closed"]
+
+# ── Stage history helper ──────────────────────────────────────────────────────
+
+def _record_stage_entry(db: Session, deal_id: int, new_stage: str):
+    """Close any open history record for this deal and open a new one."""
+    from sqlalchemy import text
+    now = datetime.utcnow()
+    db.execute(
+        text("UPDATE deal_stage_history SET exited_at = :now WHERE deal_id = :did AND exited_at IS NULL"),
+        {"now": now, "did": deal_id},
+    )
+    db.add(models.DealStageHistory(deal_id=deal_id, stage=new_stage, entered_at=now))
+
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 class DealBase(BaseModel):
     company_name:   str
-    stage:          str          = "Sourcing"
+    stage:          str             = "Sourcing"
     sector:         Optional[str]   = None
     ev:             Optional[float] = None
     country:        Optional[str]   = None
     owner:          Optional[str]   = None
+    owners:         Optional[str]   = None   # comma-separated
     notes:          Optional[str]   = None
     domain:         Optional[str]   = None
     theme:          Optional[str]   = None
+    sourcing:       Optional[str]   = None
     revenue:        Optional[float] = None
     ebitda:         Optional[float] = None
     ownership_pct:  Optional[float] = None
@@ -143,6 +175,14 @@ class DealBase(BaseModel):
     next_action:    Optional[str]   = None
     next_action_due:Optional[str]   = None
     lost_reason:    Optional[str]   = None
+    lost_note:      Optional[str]   = None
+    # Criteria
+    crit_thematic:   Optional[bool] = False
+    crit_technology: Optional[bool] = False
+    crit_commercial: Optional[bool] = False
+    crit_geography:  Optional[bool] = False
+    crit_majority:   Optional[bool] = False
+    crit_ticket:     Optional[bool] = False
 
 
 class DealCreate(DealBase):
@@ -156,10 +196,12 @@ class DealUpdate(BaseModel):
     ev:             Optional[float] = None
     country:        Optional[str]   = None
     owner:          Optional[str]   = None
+    owners:         Optional[str]   = None
     notes:          Optional[str]   = None
     position:       Optional[int]   = None
     domain:         Optional[str]   = None
     theme:          Optional[str]   = None
+    sourcing:       Optional[str]   = None
     revenue:        Optional[float] = None
     ebitda:         Optional[float] = None
     ownership_pct:  Optional[float] = None
@@ -174,6 +216,13 @@ class DealUpdate(BaseModel):
     next_action:    Optional[str]   = None
     next_action_due:Optional[str]   = None
     lost_reason:    Optional[str]   = None
+    lost_note:      Optional[str]   = None
+    crit_thematic:   Optional[bool] = None
+    crit_technology: Optional[bool] = None
+    crit_commercial: Optional[bool] = None
+    crit_geography:  Optional[bool] = None
+    crit_majority:   Optional[bool] = None
+    crit_ticket:     Optional[bool] = None
 
 
 class DealResponse(DealBase):
@@ -291,6 +340,8 @@ def create_deal(deal: DealCreate, db: Session = Depends(get_db)):
     db_deal = models.Deal(**deal.model_dump())
     db_deal.position = stage_count
     db.add(db_deal)
+    db.flush()  # get id
+    _record_stage_entry(db, db_deal.id, db_deal.stage)
     db.commit()
     db.refresh(db_deal)
     return db_deal
@@ -302,11 +353,18 @@ def update_deal(deal_id: int, deal: DealUpdate, db: Session = Depends(get_db)):
     if not db_deal:
         raise HTTPException(status_code=404, detail="Deal not found")
     updates = deal.model_dump(exclude_unset=True)
-    if "stage" in updates and updates["stage"] != db_deal.stage and "position" not in updates:
+
+    stage_changed = "stage" in updates and updates["stage"] != db_deal.stage
+    if stage_changed and "position" not in updates:
         stage_count = db.query(models.Deal).filter(models.Deal.stage == updates["stage"]).count()
         updates["position"] = stage_count
+
     for key, value in updates.items():
         setattr(db_deal, key, value)
+
+    if stage_changed:
+        _record_stage_entry(db, deal_id, updates["stage"])
+
     db.commit()
     db.refresh(db_deal)
     return db_deal
@@ -327,8 +385,11 @@ def reorder_deals(items: List[ReorderItem], db: Session = Depends(get_db)):
     for item in items:
         db_deal = db.query(models.Deal).filter(models.Deal.id == item.id).first()
         if db_deal:
+            stage_changed = db_deal.stage != item.stage
             db_deal.position = item.position
-            db_deal.stage = item.stage
+            db_deal.stage    = item.stage
+            if stage_changed:
+                _record_stage_entry(db, item.id, item.stage)
     db.commit()
     return {"ok": True}
 
@@ -390,7 +451,6 @@ def delete_note(note_id: int, db: Session = Depends(get_db)):
 # ── Documents CRUD ────────────────────────────────────────────────────────────
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".xlsx", ".png", ".jpg", ".jpeg"}
-
 DOC_CATEGORIES = ["IC Memo", "Term Sheet", "NDA", "Financial Model", "Management Presentation", "Other"]
 
 
@@ -422,12 +482,7 @@ async def upload_document(
     path = os.path.join(UPLOAD_DIR, filename)
     with open(path, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    doc = models.Document(
-        deal_id=deal_id,
-        filename=filename,
-        original_name=file.filename,
-        category=category,
-    )
+    doc = models.Document(deal_id=deal_id, filename=filename, original_name=file.filename, category=category)
     db.add(doc)
     db.commit()
     db.refresh(doc)
@@ -450,7 +505,6 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
     doc = db.query(models.Document).filter(models.Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    # Remove file from disk
     path = os.path.join(UPLOAD_DIR, doc.filename)
     if os.path.exists(path):
         os.remove(path)
@@ -536,11 +590,7 @@ def create_interaction(contact_id: int, interaction: InteractionCreate, db: Sess
     db_contact = db.query(models.Contact).filter(models.Contact.id == contact_id).first()
     if not db_contact:
         raise HTTPException(status_code=404, detail="Contact not found")
-    db_int = models.Interaction(
-        contact_id=contact_id,
-        deal_id=db_contact.deal_id,
-        **interaction.model_dump(),
-    )
+    db_int = models.Interaction(contact_id=contact_id, deal_id=db_contact.deal_id, **interaction.model_dump())
     db.add(db_int)
     db.commit()
     db.refresh(db_int)
@@ -584,11 +634,121 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.get("/api/uploads/{filename}")
 def serve_upload(filename: str):
-    filename = os.path.basename(filename)   # prevent path traversal
+    filename = os.path.basename(filename)
     path = os.path.join(UPLOAD_DIR, filename)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(path)
+
+
+# ── Analytics ─────────────────────────────────────────────────────────────────
+
+@app.get("/api/analytics/")
+def get_analytics(db: Session = Depends(get_db)):
+    from collections import defaultdict
+
+    deals  = db.query(models.Deal).all()
+    active = [d for d in deals if d.stage != "Lost"]
+    lost   = [d for d in deals if d.stage == "Lost"]
+
+    # 1. Funnel
+    funnel = []
+    for i, stage in enumerate(STAGE_ORDER):
+        count      = len([d for d in deals if d.stage == stage])
+        prev_count = len([d for d in deals if d.stage == STAGE_ORDER[i - 1]]) if i > 0 else None
+        conv_pct   = round(count / prev_count * 100) if prev_count else None
+        funnel.append({"stage": stage, "count": count, "conversion_pct": conv_pct})
+
+    # 2. Avg days per stage (from history records)
+    stage_time = []
+    for stage in STAGE_ORDER:
+        histories = (
+            db.query(models.DealStageHistory)
+            .filter(
+                models.DealStageHistory.stage == stage,
+                models.DealStageHistory.exited_at.isnot(None),
+            )
+            .all()
+        )
+        if histories:
+            avg = sum((h.exited_at - h.entered_at).days for h in histories) / len(histories)
+            stage_time.append({"stage": stage, "avg_days": round(avg, 1), "sample": len(histories)})
+        else:
+            # Fallback: current deals in this stage, days since created_at
+            current = [d for d in deals if d.stage == stage and d.created_at]
+            if current:
+                avg = sum((datetime.utcnow() - d.created_at).days for d in current) / len(current)
+                stage_time.append({"stage": stage, "avg_days": round(avg, 1), "sample": len(current)})
+            else:
+                stage_time.append({"stage": stage, "avg_days": None, "sample": 0})
+
+    # 3. Themes
+    themes_data = []
+    for theme in ["Energy", "Food", "Health"]:
+        themed   = [d for d in active if d.theme == theme]
+        total_ev = sum(d.ev or 0 for d in themed)
+        themes_data.append({"theme": theme, "count": len(themed), "total_ev": round(total_ev, 1)})
+
+    # 4. Sourcing breakdown
+    sourcing_data = []
+    for src in ["Proprietary", "Auction", "Referral", "Co-investor"]:
+        count = len([d for d in active if d.sourcing == src])
+        sourcing_data.append({"type": src, "count": count})
+
+    # 5. Criteria completion rate
+    crit_keys = ["thematic", "technology", "commercial", "geography", "majority", "ticket"]
+    criteria_data = []
+    total_deals = len(deals)
+    for key in crit_keys:
+        col   = f"crit_{key}"
+        count = sum(1 for d in deals if getattr(d, col))
+        pct   = round(count / total_deals * 100) if total_deals > 0 else 0
+        criteria_data.append({"key": key, "count": count, "pct": pct, "total": total_deals})
+
+    # 6. Lost reasons
+    reason_counts: dict = defaultdict(int)
+    for d in lost:
+        r = d.lost_reason or "Unknown"
+        reason_counts[r] += 1
+    lost_breakdown = [
+        {"reason": k, "count": v}
+        for k, v in sorted(reason_counts.items(), key=lambda x: -x[1])
+    ]
+
+    # 7. Team workload (active deals per person)
+    workload: dict = defaultdict(int)
+    for d in active:
+        people = d.owners.split(",") if d.owners else ([d.owner] if d.owner else [])
+        for p in people:
+            p = p.strip()
+            if p:
+                workload[p] += 1
+    team_data = [{"person": k, "count": v} for k, v in sorted(workload.items(), key=lambda x: -x[1])]
+
+    # 8. Deals per month
+    monthly: dict = defaultdict(int)
+    for d in deals:
+        if d.created_at:
+            monthly[d.created_at.strftime("%Y-%m")] += 1
+    monthly_data = [{"month": k, "count": v} for k, v in sorted(monthly.items())]
+
+    return {
+        "funnel":    funnel,
+        "stage_time": stage_time,
+        "themes":    themes_data,
+        "sourcing":  sourcing_data,
+        "criteria":  criteria_data,
+        "lost":      lost_breakdown,
+        "team":      team_data,
+        "monthly":   monthly_data,
+        "totals": {
+            "active": len(active),
+            "lost":   len(lost),
+            "total":  len(deals),
+            "pipeline_ev": round(sum(d.ev or 0 for d in active), 1),
+            "closed_ev":   round(sum(d.ev or 0 for d in deals if d.stage == "Closed"), 1),
+        },
+    }
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

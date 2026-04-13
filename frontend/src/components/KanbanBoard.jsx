@@ -11,7 +11,8 @@ import {
 import KanbanColumn from './KanbanColumn'
 import DealCard from './DealCard'
 
-const STAGES = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed', 'Lost']
+// Only show 6 active stages in the board; Lost has its own dedicated view
+const BOARD_STAGES = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed']
 
 export default function KanbanBoard({ deals, onUpdateDeal, onEditDeal, onDeleteDeal, onViewDeal }) {
   const [activeId, setActiveId] = useState(null)
@@ -24,7 +25,7 @@ export default function KanbanBoard({ deals, onUpdateDeal, onEditDeal, onDeleteD
   const activeDeal = activeId != null ? deals.find(d => d.id === activeId) : null
 
   // Group deals by stage, sorted by position
-  const dealsByStage = STAGES.reduce((acc, stage) => {
+  const dealsByStage = BOARD_STAGES.reduce((acc, stage) => {
     acc[stage] = deals
       .filter(d => d.stage === stage)
       .sort((a, b) => a.position - b.position)
@@ -33,7 +34,7 @@ export default function KanbanBoard({ deals, onUpdateDeal, onEditDeal, onDeleteD
 
   // Given an id, determine if it's a stage name or a deal id and return the stage
   const resolveStage = useCallback((id) => {
-    if (STAGES.includes(id)) return id
+    if (BOARD_STAGES.includes(id)) return id
     const deal = deals.find(d => d.id === id)
     return deal?.stage ?? null
   }, [deals])
@@ -62,7 +63,7 @@ export default function KanbanBoard({ deals, onUpdateDeal, onEditDeal, onDeleteD
       onDragCancel={handleDragCancel}
     >
       <div className="kanban-board">
-        {STAGES.map(stage => (
+        {BOARD_STAGES.map(stage => (
           <KanbanColumn
             key={stage}
             stage={stage}

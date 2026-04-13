@@ -21,10 +21,10 @@ export const STAGE_GATES = {
     description: 'Complete before screening this deal',
     checks: [
       {
-        key: 'deal_source',
-        label: 'Deal source',
+        key: 'sourcing',
+        label: 'Deal sourcing',
         type: 'select',
-        options: ['Outbound', 'Inbound', 'Referral', 'Co-investor'],
+        options: ['Proprietary', 'Auction', 'Referral', 'Co-investor'],
       },
       {
         key: 'thesis',
@@ -87,9 +87,25 @@ export const OWNER_COLORS = {
 }
 
 export const THEMES = [
-  { value: 'Energy Transition',  color: '#b45309', bg: '#fffbeb', dot: '#f59e0b' },
-  { value: 'Food & Agri Tech',   color: '#15803d', bg: '#f0fdf4', dot: '#22c55e' },
-  { value: 'Healthcare Tech',    color: '#0f766e', bg: '#f0fdfa', dot: '#14b8a6' },
+  { value: 'Energy', color: '#b45309', bg: '#fffbeb', dot: '#f59e0b' },
+  { value: 'Food',   color: '#15803d', bg: '#f0fdf4', dot: '#22c55e' },
+  { value: 'Health', color: '#0f766e', bg: '#f0fdfa', dot: '#14b8a6' },
+]
+
+export const SOURCING_OPTIONS = [
+  { value: 'Proprietary', color: '#ffffff', bg: '#021d49' },
+  { value: 'Auction',     color: '#92400e', bg: '#fef3c7' },
+  { value: 'Referral',    color: '#6b21a8', bg: '#f3e8ff' },
+  { value: 'Co-investor', color: '#134e4a', bg: '#ccfbf1' },
+]
+
+export const CRITERIA = [
+  { key: 'crit_thematic',   label: 'Thematic fit (Energy / Food / Health)' },
+  { key: 'crit_technology', label: 'Technology-enabled business model' },
+  { key: 'crit_commercial', label: 'Proven commercial traction' },
+  { key: 'crit_geography',  label: 'Geography within scope (NL/BE/DE/DK/SE)' },
+  { key: 'crit_majority',   label: 'Majority / significant minority stake possible' },
+  { key: 'crit_ticket',     label: 'Ticket size €10m–€75m equity' },
 ]
 
 export const SECTORS = [
@@ -107,4 +123,15 @@ export const GEOGRAPHIES = ['NL', 'DE', 'BE', 'DK', 'SE', 'NO', 'UK', 'Other']
 
 export const DEAL_SOURCES = ['Outbound', 'Inbound', 'Referral', 'Co-investor']
 
-export const LOST_REASONS = ['Valuation', 'Mandate mismatch', 'Competitive', 'No process', 'Management', 'Other']
+export const LOST_REASONS = [
+  'Valuation too high',
+  'Mandate mismatch',
+  'Lost to competitor',
+  'No formal process',
+  'Management concerns',
+  'Geography outside scope',
+  'Technology not proven',
+  'Too early stage',
+  'Deal fell through',
+  'Other',
+]

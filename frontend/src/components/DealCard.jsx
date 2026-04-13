@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { OWNER_COLORS, THEMES } from '../constants'
+import { OWNER_COLORS, THEMES, SOURCING_OPTIONS, CRITERIA } from '../constants'
 
 function CompanyLogo({ domain, name }) {
   const [failed, setFailed] = useState(false)
@@ -26,18 +26,50 @@ function CompanyLogo({ domain, name }) {
   )
 }
 
-function OwnerAvatar({ owner }) {
-  if (!owner) return null
-  const color = OWNER_COLORS[owner] || '#64748b'
-  const initials = owner.slice(0, 2).toUpperCase()
+function OwnerAvatars({ owners, owner }) {
+  // Parse multi-owner or fall back to single owner
+  const list = owners
+    ? owners.split(',').map(o => o.trim()).filter(Boolean)
+    : owner
+    ? [owner]
+    : []
+
+  if (list.length === 0) return null
+
   return (
-    <div
-      className="owner-avatar"
-      style={{ background: color }}
-      title={owner}
-    >
-      {initials}
+    <div className="card-avatars">
+      {list.slice(0, 3).map(o => {
+        const color = OWNER_COLORS[o] || '#64748b'
+        return (
+          <div
+            key={o}
+            className="owner-avatar owner-avatar-sm"
+            style={{ background: color }}
+            title={o}
+          >
+            {o.slice(0, 2).toUpperCase()}
+          </div>
+        )
+      })}
+      {list.length > 3 && (
+        <div className="owner-avatar owner-avatar-sm owner-avatar-more" title={list.slice(3).join(', ')}>
+          +{list.length - 3}
+        </div>
+      )}
     </div>
+  )
+}
+
+function SourcingBadge({ sourcing }) {
+  if (!sourcing) return null
+  const opt = SOURCING_OPTIONS.find(o => o.value === sourcing)
+  if (!opt) return (
+    <span className="sourcing-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>{sourcing}</span>
+  )
+  return (
+    <span className="sourcing-badge" style={{ background: opt.bg, color: opt.color }}>
+      {sourcing}
+    </span>
   )
 }
 
@@ -52,6 +84,20 @@ function ThemePill({ theme }) {
     >
       <span className="theme-dot" style={{ background: meta.dot }} />
       {theme}
+    </span>
+  )
+}
+
+function CriteriaScore({ deal }) {
+  const score = CRITERIA.filter(c => deal[c.key]).length
+  if (score === 0) return null
+  const allMet = score === CRITERIA.length
+  return (
+    <span
+      className={`criteria-score-badge${allMet ? ' all-met' : ''}`}
+      title={`${score}/${CRITERIA.length} investment criteria met`}
+    >
+      {score}/{CRITERIA.length}
     </span>
   )
 }
@@ -84,29 +130,27 @@ export default function DealCard({ deal, onEdit, onDelete, onView, isOverlay = f
       onClick={isOverlay ? undefined : handleClick}
       {...(isOverlay ? {} : { ...listeners, ...attributes })}
     >
-      {/* Top row: logo + name/sector */}
+      {/* Top row: logo + name + criteria score */}
       <div className="card-top">
         <CompanyLogo domain={deal.domain} name={deal.company_name} />
         <div className="card-name-wrap">
           <div className="card-name">{deal.company_name}</div>
-          {deal.sector && <div className="card-sector">{deal.sector}</div>}
         </div>
+        <CriteriaScore deal={deal} />
       </div>
 
-      {/* Tags: EV + country */}
-      {(deal.ev != null || deal.country) && (
-        <div className="card-meta">
-          {deal.ev != null && (
-            <span className="card-tag ev">€{deal.ev}m</span>
-          )}
-          {deal.country && (
-            <span className="card-tag">{deal.country}</span>
-          )}
+      {/* Sourcing badge */}
+      {deal.sourcing && (
+        <div className="card-sourcing-row">
+          <SourcingBadge sourcing={deal.sourcing} />
         </div>
       )}
 
-      {/* Theme pill */}
-      {deal.theme && <ThemePill theme={deal.theme} />}
+      {/* Theme pill + EV */}
+      <div className="card-pills-row">
+        {deal.theme && <ThemePill theme={deal.theme} />}
+        {deal.ev != null && <span className="card-tag ev">€{deal.ev}m</span>}
+      </div>
 
       {/* Next action */}
       {(deal.next_action || deal.next_action_due) && (
@@ -123,10 +167,9 @@ export default function DealCard({ deal, onEdit, onDelete, onView, isOverlay = f
         </div>
       )}
 
-      {/* Footer: owner avatar + actions */}
+      {/* Footer: owner avatars + actions */}
       <div className="card-footer">
-        <OwnerAvatar owner={deal.owner} />
-        {deal.owner && <span className="card-owner-name">{deal.owner}</span>}
+        <OwnerAvatars owners={deal.owners} owner={deal.owner} />
         {!isOverlay && (
           <div className="card-actions">
             <button className="card-action-btn edit" onClick={stopAndEdit}>Edit</button>

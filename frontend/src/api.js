@@ -65,4 +65,7 @@ export const api = {
   },
 
   uploadUrl: (filename) => `${BASE}/uploads/${filename}`,
+
+  // Analytics
+  getAnalytics: () => request('/analytics/'),
 }

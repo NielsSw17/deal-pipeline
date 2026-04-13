@@ -3,6 +3,7 @@ import { LOST_REASONS } from '../constants'
 
 export default function LostModal({ deal, onConfirm, onCancel }) {
   const [reason, setReason] = useState('')
+  const [note, setNote]     = useState('')
 
   return (
     <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onCancel()}>
@@ -33,13 +34,26 @@ export default function LostModal({ deal, onConfirm, onCancel }) {
               </button>
             ))}
           </div>
+
+          {reason && (
+            <div className="lost-note-wrap">
+              <label className="form-label">Additional note (optional)</label>
+              <textarea
+                className="form-textarea"
+                rows={2}
+                placeholder="Any additional context…"
+                value={note}
+                onChange={e => setNote(e.target.value)}
+              />
+            </div>
+          )}
         </div>
 
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
           <button
             className="btn btn-danger"
-            onClick={() => onConfirm(reason)}
+            onClick={() => onConfirm({ reason, note: note || null })}
             disabled={!reason}
           >
             Mark as Lost

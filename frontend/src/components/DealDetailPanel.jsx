@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '../api'
-import { TEAM, OWNER_COLORS, THEMES, STAGE_COLORS } from '../constants'
+import { TEAM, OWNER_COLORS, THEMES, STAGE_COLORS, CRITERIA, SOURCING_OPTIONS } from '../constants'
 import { exportDealToPDF } from '../utils/export'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -409,8 +409,42 @@ function ContactsSection({ dealId }) {
   )
 }
 
+// ── Criteria checklist ─────────────────────────────────────────────────────────
+function CriteriaSection({ deal, onUpdate }) {
+  const score = CRITERIA.filter(c => deal[c.key]).length
+
+  const handleToggle = async (key) => {
+    const newVal = !deal[key]
+    await onUpdate(deal.id, { [key]: newVal })
+  }
+
+  return (
+    <div className="detail-section">
+      <div className="detail-section-title-row">
+        <span className="detail-section-title">DTE Investment Criteria</span>
+        <span className={`criteria-score-badge large${score === CRITERIA.length ? ' all-met' : ''}`}>
+          {score}/{CRITERIA.length}
+        </span>
+      </div>
+      <div className="criteria-list">
+        {CRITERIA.map(c => (
+          <label key={c.key} className="criteria-item">
+            <input
+              type="checkbox"
+              checked={!!deal[c.key]}
+              onChange={() => handleToggle(c.key)}
+              className="criteria-checkbox"
+            />
+            <span className={`criteria-label${deal[c.key] ? ' checked' : ''}`}>{c.label}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Main panel ─────────────────────────────────────────────────────────────────
-export default function DealDetailPanel({ deal, onClose, onEdit }) {
+export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate }) {
   const [notes, setNotes]           = useState([])
   const [loadingNotes, setLoadingNotes] = useState(true)
   const [noteText, setNoteText]     = useState('')
@@ -554,12 +588,37 @@ export default function DealDetailPanel({ deal, onClose, onEdit }) {
               <div className="detail-section">
                 <div className="detail-section-title">Deal Info</div>
                 <div className="detail-fields">
-                  <Field label="Deal source" value={deal.deal_source} />
+                  {/* Sourcing */}
+                  {deal.sourcing && (() => {
+                    const sopt = SOURCING_OPTIONS.find(o => o.value === deal.sourcing)
+                    return (
+                      <div className="detail-field">
+                        <span className="detail-field-label">Sourcing</span>
+                        <span className="detail-field-value">
+                          <span className="sourcing-badge" style={sopt ? { background: sopt.bg, color: sopt.color } : {}}>
+                            {deal.sourcing}
+                          </span>
+                        </span>
+                      </div>
+                    )
+                  })()}
                   <Field label="Co-investor" value={deal.co_investor} />
+                  {/* Multi-owner display */}
                   <div className="detail-field detail-owner-field">
-                    <span className="detail-field-label">Owner</span>
+                    <span className="detail-field-label">Team</span>
                     <span className="detail-field-value owner-value">
-                      {deal.owner ? <><OwnerAvatar owner={deal.owner} size={20} /> {deal.owner}</> : '—'}
+                      {(() => {
+                        const ownerList = deal.owners
+                          ? deal.owners.split(',').map(o => o.trim()).filter(Boolean)
+                          : deal.owner ? [deal.owner] : []
+                        if (ownerList.length === 0) return '—'
+                        return (
+                          <div className="detail-owners-row">
+                            {ownerList.map(o => <OwnerAvatar key={o} owner={o} size={20} />)}
+                            <span style={{ marginLeft: 6, fontSize: 13 }}>{ownerList.join(', ')}</span>
+                          </div>
+                        )
+                      })()}
                     </span>
                   </div>
                   {deal.theme && (
@@ -577,6 +636,9 @@ export default function DealDetailPanel({ deal, onClose, onEdit }) {
                   )}
                 </div>
               </div>
+
+              {/* DTE Investment Criteria checklist */}
+              {onUpdate && <CriteriaSection deal={deal} onUpdate={onUpdate} />}
 
               {(deal.ic_date || deal.ic_memo || deal.term_sheet || deal.close_date) && (
                 <div className="detail-section">
