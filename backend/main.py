@@ -42,7 +42,7 @@ def _migrate():
             if col not in existing:
                 conn.execute(text(f"ALTER TABLE deals ADD COLUMN {col} {typedef}"))
 
-        # deal_notes table (created by create_all above, but safety net)
+        # deal_notes
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS deal_notes (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,6 +53,45 @@ def _migrate():
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """))
+
+        # deal_documents
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS deal_documents (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                deal_id       INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+                filename      TEXT NOT NULL,
+                original_name TEXT NOT NULL,
+                category      TEXT NOT NULL DEFAULT 'Other',
+                uploaded_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        # deal_contacts
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS deal_contacts (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                deal_id    INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+                name       TEXT NOT NULL,
+                role       TEXT,
+                email      TEXT,
+                phone      TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        # contact_interactions
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS contact_interactions (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                contact_id INTEGER NOT NULL REFERENCES deal_contacts(id) ON DELETE CASCADE,
+                deal_id    INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+                type       TEXT NOT NULL,
+                date       TEXT NOT NULL,
+                note       TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
         conn.commit()
 
 
@@ -65,7 +104,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Deal Pipeline CRM", version="2.0.0")
+app = FastAPI(title="Deal Pipeline CRM", version="2.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -164,6 +203,69 @@ class NoteResponse(BaseModel):
     author:    str
     is_pinned: bool
     created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class DocumentResponse(BaseModel):
+    id:            int
+    deal_id:       int
+    filename:      str
+    original_name: str
+    category:      str
+    uploaded_at:   Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class DocumentUpdate(BaseModel):
+    category: str
+
+
+class ContactCreate(BaseModel):
+    name:  str
+    role:  Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class ContactUpdate(BaseModel):
+    name:  Optional[str] = None
+    role:  Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class InteractionCreate(BaseModel):
+    type: str
+    date: str
+    note: Optional[str] = None
+
+
+class InteractionUpdate(BaseModel):
+    type: Optional[str] = None
+    date: Optional[str] = None
+    note: Optional[str] = None
+
+
+class InteractionResponse(BaseModel):
+    id:         int
+    contact_id: int
+    deal_id:    int
+    type:       str
+    date:       str
+    note:       Optional[str] = None
+    created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class ContactResponse(BaseModel):
+    id:           int
+    deal_id:      int
+    name:         str
+    role:         Optional[str] = None
+    email:        Optional[str] = None
+    phone:        Optional[str] = None
+    created_at:   Optional[datetime] = None
+    interactions: List[InteractionResponse] = []
     model_config = {"from_attributes": True}
 
 
@@ -280,10 +382,188 @@ def delete_note(note_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
-# ── File upload ───────────────────────────────────────────────────────────────
+# ── Documents CRUD ────────────────────────────────────────────────────────────
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".xlsx", ".png", ".jpg", ".jpeg"}
 
+DOC_CATEGORIES = ["IC Memo", "Term Sheet", "NDA", "Financial Model", "Management Presentation", "Other"]
+
+
+@app.get("/api/deals/{deal_id}/documents", response_model=List[DocumentResponse])
+def get_documents(deal_id: int, db: Session = Depends(get_db)):
+    return (
+        db.query(models.Document)
+        .filter(models.Document.deal_id == deal_id)
+        .order_by(models.Document.uploaded_at.desc())
+        .all()
+    )
+
+
+@app.post("/api/deals/{deal_id}/documents", response_model=DocumentResponse, status_code=201)
+async def upload_document(
+    deal_id: int,
+    category: str = "Other",
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    if not db.query(models.Deal).filter(models.Deal.id == deal_id).first():
+        raise HTTPException(status_code=404, detail="Deal not found")
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(400, f"File type '{ext}' not allowed")
+    if category not in DOC_CATEGORIES:
+        category = "Other"
+    filename = f"{uuid.uuid4().hex}{ext}"
+    path = os.path.join(UPLOAD_DIR, filename)
+    with open(path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    doc = models.Document(
+        deal_id=deal_id,
+        filename=filename,
+        original_name=file.filename,
+        category=category,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+@app.patch("/api/documents/{doc_id}", response_model=DocumentResponse)
+def update_document(doc_id: int, update: DocumentUpdate, db: Session = Depends(get_db)):
+    doc = db.query(models.Document).filter(models.Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    doc.category = update.category
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+@app.delete("/api/documents/{doc_id}", status_code=204)
+def delete_document(doc_id: int, db: Session = Depends(get_db)):
+    doc = db.query(models.Document).filter(models.Document.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    # Remove file from disk
+    path = os.path.join(UPLOAD_DIR, doc.filename)
+    if os.path.exists(path):
+        os.remove(path)
+    db.delete(doc)
+    db.commit()
+
+
+# ── Contacts & Interactions CRUD ──────────────────────────────────────────────
+
+@app.get("/api/deals/{deal_id}/contacts", response_model=List[ContactResponse])
+def get_contacts(deal_id: int, db: Session = Depends(get_db)):
+    contacts = (
+        db.query(models.Contact)
+        .filter(models.Contact.deal_id == deal_id)
+        .order_by(models.Contact.created_at)
+        .all()
+    )
+    result = []
+    for c in contacts:
+        interactions = (
+            db.query(models.Interaction)
+            .filter(models.Interaction.contact_id == c.id)
+            .order_by(models.Interaction.date.desc())
+            .all()
+        )
+        result.append(ContactResponse(
+            id=c.id, deal_id=c.deal_id, name=c.name, role=c.role,
+            email=c.email, phone=c.phone, created_at=c.created_at,
+            interactions=[InteractionResponse.model_validate(i) for i in interactions],
+        ))
+    return result
+
+
+@app.post("/api/deals/{deal_id}/contacts", response_model=ContactResponse, status_code=201)
+def create_contact(deal_id: int, contact: ContactCreate, db: Session = Depends(get_db)):
+    if not db.query(models.Deal).filter(models.Deal.id == deal_id).first():
+        raise HTTPException(status_code=404, detail="Deal not found")
+    db_contact = models.Contact(deal_id=deal_id, **contact.model_dump())
+    db.add(db_contact)
+    db.commit()
+    db.refresh(db_contact)
+    return ContactResponse(
+        id=db_contact.id, deal_id=db_contact.deal_id, name=db_contact.name,
+        role=db_contact.role, email=db_contact.email, phone=db_contact.phone,
+        created_at=db_contact.created_at, interactions=[],
+    )
+
+
+@app.put("/api/contacts/{contact_id}", response_model=ContactResponse)
+def update_contact(contact_id: int, contact: ContactUpdate, db: Session = Depends(get_db)):
+    db_contact = db.query(models.Contact).filter(models.Contact.id == contact_id).first()
+    if not db_contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    for key, value in contact.model_dump(exclude_unset=True).items():
+        setattr(db_contact, key, value)
+    db.commit()
+    db.refresh(db_contact)
+    interactions = (
+        db.query(models.Interaction)
+        .filter(models.Interaction.contact_id == contact_id)
+        .order_by(models.Interaction.date.desc())
+        .all()
+    )
+    return ContactResponse(
+        id=db_contact.id, deal_id=db_contact.deal_id, name=db_contact.name,
+        role=db_contact.role, email=db_contact.email, phone=db_contact.phone,
+        created_at=db_contact.created_at,
+        interactions=[InteractionResponse.model_validate(i) for i in interactions],
+    )
+
+
+@app.delete("/api/contacts/{contact_id}", status_code=204)
+def delete_contact(contact_id: int, db: Session = Depends(get_db)):
+    db_contact = db.query(models.Contact).filter(models.Contact.id == contact_id).first()
+    if not db_contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    db.delete(db_contact)
+    db.commit()
+
+
+@app.post("/api/contacts/{contact_id}/interactions", response_model=InteractionResponse, status_code=201)
+def create_interaction(contact_id: int, interaction: InteractionCreate, db: Session = Depends(get_db)):
+    db_contact = db.query(models.Contact).filter(models.Contact.id == contact_id).first()
+    if not db_contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    db_int = models.Interaction(
+        contact_id=contact_id,
+        deal_id=db_contact.deal_id,
+        **interaction.model_dump(),
+    )
+    db.add(db_int)
+    db.commit()
+    db.refresh(db_int)
+    return db_int
+
+
+@app.put("/api/interactions/{interaction_id}", response_model=InteractionResponse)
+def update_interaction(interaction_id: int, update: InteractionUpdate, db: Session = Depends(get_db)):
+    db_int = db.query(models.Interaction).filter(models.Interaction.id == interaction_id).first()
+    if not db_int:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+    for key, value in update.model_dump(exclude_unset=True).items():
+        setattr(db_int, key, value)
+    db.commit()
+    db.refresh(db_int)
+    return db_int
+
+
+@app.delete("/api/interactions/{interaction_id}", status_code=204)
+def delete_interaction(interaction_id: int, db: Session = Depends(get_db)):
+    db_int = db.query(models.Interaction).filter(models.Interaction.id == interaction_id).first()
+    if not db_int:
+        raise HTTPException(status_code=404, detail="Interaction not found")
+    db.delete(db_int)
+    db.commit()
+
+
+# ── Generic file upload (stage gates) ────────────────────────────────────────
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):

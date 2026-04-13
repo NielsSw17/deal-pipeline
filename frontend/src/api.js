@@ -28,6 +28,30 @@ export const api = {
   updateNote: (noteId, data) => request(`/notes/${noteId}`,       { method: 'PUT',  body: JSON.stringify(data) }),
   deleteNote: (noteId)       => request(`/notes/${noteId}`,       { method: 'DELETE' }),
 
+  // Documents
+  getDocuments:   (dealId)           => request(`/deals/${dealId}/documents`),
+  uploadDocument: async (dealId, file, category) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch(`/api/deals/${dealId}/documents?category=${encodeURIComponent(category)}`, { method: 'POST', body: fd })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Upload failed' }))
+      throw new Error(err.detail || 'Upload failed')
+    }
+    return res.json()
+  },
+  updateDocument: (docId, data)      => request(`/documents/${docId}`,  { method: 'PATCH',  body: JSON.stringify(data) }),
+  deleteDocument: (docId)            => request(`/documents/${docId}`,  { method: 'DELETE' }),
+
+  // Contacts
+  getContacts:         (dealId)              => request(`/deals/${dealId}/contacts`),
+  createContact:       (dealId, data)        => request(`/deals/${dealId}/contacts`,           { method: 'POST',   body: JSON.stringify(data) }),
+  updateContact:       (contactId, data)     => request(`/contacts/${contactId}`,              { method: 'PUT',    body: JSON.stringify(data) }),
+  deleteContact:       (contactId)           => request(`/contacts/${contactId}`,              { method: 'DELETE' }),
+  createInteraction:   (contactId, data)     => request(`/contacts/${contactId}/interactions`, { method: 'POST',   body: JSON.stringify(data) }),
+  updateInteraction:   (interactionId, data) => request(`/interactions/${interactionId}`,      { method: 'PUT',    body: JSON.stringify(data) }),
+  deleteInteraction:   (interactionId)       => request(`/interactions/${interactionId}`,      { method: 'DELETE' }),
+
   // File upload
   uploadFile: async (file) => {
     const fd = new FormData()

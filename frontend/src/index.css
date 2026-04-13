@@ -1157,3 +1157,198 @@ body {
   white-space: nowrap;
 }
 .note-pin-label input { cursor: pointer; }
+
+/* ── BTN XS ──────────────────────────────────────────── */
+.btn-xs {
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 5px;
+  height: auto;
+}
+
+/* ── DETAIL PANEL TABS ───────────────────────────────── */
+.detail-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+  gap: 0;
+  flex-shrink: 0;
+}
+.detail-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+  margin-bottom: -1px;
+}
+.detail-tab:hover { color: var(--text); }
+.detail-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+.detail-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.detail-section-title-row .detail-section-title { margin-bottom: 0; }
+
+/* ── DOCUMENTS ───────────────────────────────────────── */
+.doc-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.doc-cat-select { width: auto; min-width: 160px; }
+
+.doc-list { display: flex; flex-direction: column; gap: 6px; }
+
+.doc-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.doc-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.doc-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.doc-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-name:hover { text-decoration: underline; }
+.doc-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.doc-cat-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  background: var(--primary-light);
+  color: var(--primary);
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.doc-cat-badge:hover { background: #dbeafe; }
+.doc-date { font-size: 11px; color: var(--text-light); }
+
+.doc-edit-cat { display: flex; align-items: center; gap: 6px; }
+.doc-cat-inline { width: auto; min-width: 140px; font-size: 12px; padding: 3px 6px; height: auto; }
+
+/* ── CONTACTS ────────────────────────────────────────── */
+.contacts-list { display: flex; flex-direction: column; gap: 8px; }
+
+.contact-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.contact-edit-row { display: flex; gap: 8px; }
+.contact-edit-row .form-input,
+.contact-edit-row .form-select { flex: 1; }
+
+.contact-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.contact-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.contact-header:hover { background: var(--bg); }
+
+.contact-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.contact-summary { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.contact-name { font-size: 13px; font-weight: 600; }
+.contact-role-badge { font-size: 11px; font-weight: 600; }
+.contact-detail-line { font-size: 12px; color: var(--text-muted); }
+
+.contact-header-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.contact-chevron { font-size: 10px; color: var(--text-light); margin-left: 2px; }
+
+.contact-edit-form { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+
+/* ── INTERACTIONS ────────────────────────────────────── */
+.contact-interactions {
+  border-top: 1px solid var(--border-light);
+  padding: 10px 12px;
+  background: var(--bg);
+}
+.contact-int-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.contact-int-label { font-size: 11px; font-weight: 600; color: var(--text-light); text-transform: uppercase; letter-spacing: .04em; }
+
+.interaction-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+}
+.interaction-edit-row { display: flex; gap: 8px; }
+.interaction-type-select { width: auto; min-width: 90px; }
+.interaction-date-input  { flex: 1; }
+
+.interaction-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.interaction-type-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.interaction-body { flex: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.interaction-type { font-size: 12px; font-weight: 600; color: var(--text); }
+.interaction-date { font-size: 11px; color: var(--text-light); }
+.interaction-note { font-size: 12px; color: var(--text-muted); width: 100%; margin-top: 1px; }
+
+.interaction-edit-wrap { flex: 1; display: flex; flex-direction: column; gap: 6px; }

@@ -45,3 +45,38 @@ class Note(Base):
     author    = Column(String,  nullable=False)
     is_pinned = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class Document(Base):
+    __tablename__ = "deal_documents"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    deal_id       = Column(Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=False)
+    filename      = Column(String, nullable=False)   # stored UUID name
+    original_name = Column(String, nullable=False)
+    category      = Column(String, nullable=False, default="Other")
+    uploaded_at   = Column(DateTime, server_default=func.now())
+
+
+class Contact(Base):
+    __tablename__ = "deal_contacts"
+
+    id      = Column(Integer, primary_key=True, index=True)
+    deal_id = Column(Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=False)
+    name    = Column(String, nullable=False)
+    role    = Column(String, nullable=True)
+    email   = Column(String, nullable=True)
+    phone   = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class Interaction(Base):
+    __tablename__ = "contact_interactions"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    contact_id = Column(Integer, ForeignKey("deal_contacts.id", ondelete="CASCADE"), nullable=False)
+    deal_id    = Column(Integer, ForeignKey("deals.id",         ondelete="CASCADE"), nullable=False)
+    type       = Column(String, nullable=False)   # Call / Email / Meeting
+    date       = Column(String, nullable=False)
+    note       = Column(Text,   nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
