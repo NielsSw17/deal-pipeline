@@ -292,13 +292,42 @@ function LostReasonsChart({ data }) {
   )
 }
 
+// ── Postponed reasons ──────────────────────────────────────────────────────────
+function PostponedReasonsChart({ data }) {
+  if (!data || data.length === 0) return (
+    <div className="chart-card">
+      <div className="chart-title">Postponed Reasons</div>
+      <p className="chart-empty">No postponed deals yet.</p>
+    </div>
+  )
+
+  const maxCount = Math.max(...data.map(r => r.count), 1)
+
+  return (
+    <div className="chart-card">
+      <div className="chart-title">Postponed Reasons ({data.reduce((s, r) => s + r.count, 0)} deals)</div>
+      <div className="funnel-rows">
+        {data.map(row => (
+          <div key={row.reason || 'Unknown'} className="funnel-row">
+            <span className="funnel-label">{row.reason || 'Unknown'}</span>
+            <div className="funnel-bar-track">
+              <div className="funnel-bar-fill" style={{ width: `${(row.count / maxCount) * 100}%`, background: '#6b7280' }} />
+            </div>
+            <span className="funnel-count">{row.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── KPI row ────────────────────────────────────────────────────────────────────
 function KPIRow({ totals }) {
   if (!totals) return null
   const kpis = [
     { label: 'Active Deals',  value: totals.active_deals ?? 0 },
     { label: 'Pipeline EV',   value: fmtEV(totals.pipeline_ev ?? 0) },
-    { label: 'Closed EV',     value: fmtEV(totals.closed_ev ?? 0) },
+    { label: 'Portfolio EV',  value: fmtEV(totals.closed_ev ?? 0) },
     { label: 'Win Rate',      value: `${totals.win_rate ?? 0}%` },
     { label: 'Lost',          value: totals.lost_count ?? 0 },
   ]
@@ -351,6 +380,7 @@ export default function AnalyticsPage() {
         <MonthlyTrendChart data={data?.monthly} />
         <AvgStageTimeChart data={data?.stage_time} />
         <LostReasonsChart data={data?.lost} />
+        <PostponedReasonsChart data={data?.postponed} />
       </div>
     </div>
   )

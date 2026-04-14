@@ -14,6 +14,8 @@ import StatsBar from './components/StatsBar'
 import DTELogo from './components/DTELogo'
 import ImportModal from './components/ImportModal'
 import CorrespondencePanel from './components/CorrespondencePanel'
+import PostponeModal from './components/PostponeModal'
+import AlertBanner from './components/AlertBanner'
 
 let toastId = 0
 
@@ -33,6 +35,9 @@ export default function App() {
 
   // Lost modal
   const [pendingLost, setPendingLost] = useState(null) // { dealId, fromStage }
+
+  // Postpone modal
+  const [pendingPostpone, setPendingPostpone] = useState(null) // { dealId, fromStage }
 
   // Export dropdown
   const [exportOpen, setExportOpen]   = useState(false)
@@ -120,6 +125,12 @@ export default function App() {
       return
     }
 
+    // Moving to Postponed — capture reason
+    if (newStage === 'Postponed') {
+      setPendingPostpone({ dealId, fromStage: deal.stage })
+      return
+    }
+
     const fromIdx = STAGE_ORDER.indexOf(deal.stage)
     const toIdx   = STAGE_ORDER.indexOf(newStage)
     const gateKey = `${deal.stage}→${newStage}`
@@ -157,6 +168,15 @@ export default function App() {
     if (updated) showToast('Deal marked as lost')
   }
   const handleLostCancel = () => setPendingLost(null)
+
+  const handlePostponeConfirm = async ({ reason, notes }) => {
+    if (!pendingPostpone) return
+    const { dealId } = pendingPostpone
+    setPendingPostpone(null)
+    const updated = await handleUpdate(dealId, { stage: 'Postponed', postpone_reason: reason, postpone_notes: notes || null })
+    if (updated) showToast('Deal postponed')
+  }
+  const handlePostponeCancel = () => setPendingPostpone(null)
 
   // Reactivate a lost deal — move back to Sourcing
   const handleReactivate = async (deal) => {
@@ -223,7 +243,7 @@ export default function App() {
         {showFilters && (
           <div className="navbar-filters">
             <div className="search-wrap">
-              <svg className="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <svg className="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
               <input
                 className="form-input search-input"
                 placeholder="Search…"
@@ -304,6 +324,9 @@ export default function App() {
         <button className="btn btn-primary" onClick={openAdd}>+ Add Deal</button>
       </nav>
 
+      {/* ── Alert banner (overdue next actions) ── */}
+      <AlertBanner onViewDeal={openDetail} />
+
       {/* ── Stats bar (hide in analytics/lost) ── */}
       {(view === 'kanban' || view === 'table') && <StatsBar deals={deals} />}
 
@@ -373,6 +396,18 @@ export default function App() {
           onCancel={handleLostCancel}
         />
       )}
+
+      {/* ── Postpone modal ── */}
+      {pendingPostpone && (() => {
+        const postponingDeal = deals.find(d => d.id === pendingPostpone.dealId)
+        return postponingDeal ? (
+          <PostponeModal
+            deal={postponingDeal}
+            onConfirm={handlePostponeConfirm}
+            onCancel={handlePostponeCancel}
+          />
+        ) : null
+      })()}
 
       {/* ── Detail panel ── */}
       {detailDeal && (

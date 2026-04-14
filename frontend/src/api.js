@@ -18,7 +18,7 @@ export const api = {
   // Deals
   getDeals:     ()         => request('/deals'),
   createDeal:   (data)     => request('/deals',         { method: 'POST',   body: JSON.stringify(data) }),
-  updateDeal:   (id, data) => request(`/deals/${id}`,   { method: 'PUT',    body: JSON.stringify(data) }),
+  updateDeal:   (id, data) => request(`/deals/${id}`,   { method: 'PATCH',  body: JSON.stringify(data) }),
   deleteDeal:   (id)       => request(`/deals/${id}`,   { method: 'DELETE' }),
   reorderDeals: (items)    => request('/deals/reorder', { method: 'POST',   body: JSON.stringify(items) }),
 
@@ -46,20 +46,28 @@ export const api = {
   // Contacts
   getContacts:         (dealId)              => request(`/deals/${dealId}/contacts`),
   createContact:       (dealId, data)        => request(`/deals/${dealId}/contacts`,           { method: 'POST',   body: JSON.stringify(data) }),
-  updateContact:       (contactId, data)     => request(`/contacts/${contactId}`,              { method: 'PUT',    body: JSON.stringify(data) }),
+  updateContact:       (contactId, data)     => request(`/contacts/${contactId}`,              { method: 'PATCH',  body: JSON.stringify(data) }),
   deleteContact:       (contactId)           => request(`/contacts/${contactId}`,              { method: 'DELETE' }),
   createInteraction:   (contactId, data)     => request(`/contacts/${contactId}/interactions`, { method: 'POST',   body: JSON.stringify(data) }),
   updateInteraction:   (interactionId, data) => request(`/interactions/${interactionId}`,      { method: 'PUT',    body: JSON.stringify(data) }),
   deleteInteraction:   (interactionId)       => request(`/interactions/${interactionId}`,      { method: 'DELETE' }),
 
   // Correspondence (timeline)
-  getCorrespondence:    (dealId)              => request(`/deals/${dealId}/correspondence`),
-  createCorrespondence: (dealId, data)        => request(`/deals/${dealId}/correspondence`, { method: 'POST', body: JSON.stringify(data) }),
-  deleteCorrespondence: (dealId, entryId)     => request(`/deals/${dealId}/correspondence/${entryId}`, { method: 'DELETE' }),
+  getCorrespondence:    (dealId)          => request(`/deals/${dealId}/correspondence`),
+  createCorrespondence: (dealId, data)    => request(`/deals/${dealId}/correspondence`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteCorrespondence: (dealId, entryId) => request(`/deals/${dealId}/correspondence/${entryId}`, { method: 'DELETE' }),
 
   // Sectors
-  getSectors:    ()     => request('/sectors'),
-  createSector:  (data) => request('/sectors', { method: 'POST', body: JSON.stringify(data) }),
+  getSectors:   ()     => request('/sectors'),
+  createSector: (data) => request('/sectors', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Team members
+  getTeamMembers:    ()              => request('/team-members'),
+  updateTeamMember:  (id, data)      => request(`/team-members/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Alerts
+  getOverdueAlerts: () => request('/alerts/overdue'),
+  sendAlertEmails:  () => request('/alerts/send-email', { method: 'POST' }),
 
   // File upload
   uploadFile: async (file) => {
@@ -70,7 +78,7 @@ export const api = {
       const err = await res.json().catch(() => ({ detail: 'Upload failed' }))
       throw new Error(err.detail || 'Upload failed')
     }
-    return res.json()  // { filename, original_name }
+    return res.json()
   },
 
   uploadUrl: (filename) => `${BASE}/uploads/${filename}`,

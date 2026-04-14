@@ -501,6 +501,16 @@ export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate, onOpe
     setEditingNoteId(null)
   }
 
+  const getDueStatus = (due) => {
+    if (!due) return null
+    const today = new Date(); today.setHours(0,0,0,0)
+    const dueDate = new Date(due + 'T00:00:00')
+    if (dueDate < today) return 'overdue'
+    const diff = (dueDate - today) / (1000 * 60 * 60 * 24)
+    if (diff <= 7) return 'due-soon'
+    return null
+  }
+  const nextDueStatus = getDueStatus(deal.next_action_due)
   const stageColor   = STAGE_COLORS[deal.stage] || {}
   const themeMeta    = THEMES.find(t => t.value === deal.theme)
   const sectorList   = parseSectors(deal.sectors)
@@ -565,10 +575,19 @@ export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate, onOpe
 
         {/* ── Next action ── */}
         {(deal.next_action || deal.next_action_due) && (
-          <div className={`detail-next-action${isOverdue ? ' overdue' : ''}`}>
-            <span className="detail-next-action-label">{isOverdue ? '⚠ Overdue' : '→ Next action'}</span>
+          <div className={`detail-next-action${nextDueStatus ? ` ${nextDueStatus}` : ''}`}>
+            <span className="detail-next-action-label">
+              {nextDueStatus === 'overdue' ? '⚠ Overdue' : nextDueStatus === 'due-soon' ? '⏰ Due soon' : '→ Next action'}
+            </span>
             <span className="detail-next-action-text">{deal.next_action || '—'}</span>
-            {deal.next_action_due && <span className="detail-next-action-due">{fmtDate(deal.next_action_due)}</span>}
+            {deal.next_action_due && (
+              <span className="detail-next-action-due">{fmtDate(deal.next_action_due)}</span>
+            )}
+            {deal.next_action_assignees && (
+              <span className="detail-next-action-assignees">
+                → {deal.next_action_assignees}
+              </span>
+            )}
           </div>
         )}
 
@@ -635,6 +654,19 @@ export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate, onOpe
                     )
                   })()}
                   <Field label="Co-investor" value={deal.co_investor} />
+                  {deal.stage === 'Postponed' && deal.postpone_reason && (
+                    <div className="detail-field">
+                      <span className="detail-field-label">Postponed</span>
+                      <span className="detail-field-value">
+                        <span className="postpone-reason-badge" style={{ fontSize: 12, padding: '3px 10px' }}>
+                          {deal.postpone_reason}
+                        </span>
+                        {deal.postpone_notes && (
+                          <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{deal.postpone_notes}</span>
+                        )}
+                      </span>
+                    </div>
+                  )}
                   {/* Multi-owner display */}
                   <div className="detail-field detail-owner-field">
                     <span className="detail-field-label">Team</span>

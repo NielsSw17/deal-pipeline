@@ -1,21 +1,20 @@
-export const STAGES = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed', 'Postponed', 'Lost']
+// Signed removed; Closed renamed to Portfolio
+export const STAGES = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Portfolio', 'Postponed', 'Lost']
 
 // Forward-progression order (Lost/Postponed excluded from gate logic)
-export const STAGE_ORDER = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed']
+export const STAGE_ORDER = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Portfolio']
 
 export const STAGE_COLORS = {
   Sourcing:        { bar: '#3b82f6', bg: '#eff6ff',  color: '#3b82f6' },
   Screening:       { bar: '#8b5cf6', bg: '#f5f3ff',  color: '#8b5cf6' },
   IC:              { bar: '#f59e0b', bg: '#fffbeb',  color: '#f59e0b' },
   'Due Diligence': { bar: '#f97316', bg: '#fff7ed',  color: '#f97316' },
-  Signed:          { bar: '#06b6d4', bg: '#ecfeff',  color: '#06b6d4' },
-  Closed:          { bar: '#10b981', bg: '#f0fdf4',  color: '#10b981' },
+  Portfolio:       { bar: '#0d9488', bg: '#f0fdfa',  color: '#0d9488' },
   Postponed:       { bar: '#6b7280', bg: '#f9fafb',  color: '#6b7280' },
   Lost:            { bar: '#94a3b8', bg: '#f8fafc',  color: '#94a3b8' },
 }
 
 // Stage progression gate rules
-// key = "FromStage→ToStage", only applies when moving exactly one step forward
 export const STAGE_GATES = {
   'Sourcing→Screening': {
     title: 'Move to Screening',
@@ -39,7 +38,7 @@ export const STAGE_GATES = {
     title: 'Request IC',
     description: 'Complete before presenting to the Investment Committee',
     checks: [
-      { key: 'ev',     label: 'EV estimate (€m)', type: 'number' },
+      { key: 'ev', label: 'EV estimate (€m)', type: 'number' },
       {
         key: 'sector',
         label: 'Sector',
@@ -56,19 +55,13 @@ export const STAGE_GATES = {
       { key: 'ic_memo', label: 'IC memo (PDF)', type: 'file' },
     ],
   },
-  'Due Diligence→Signed': {
-    title: 'Mark as Signed',
-    description: 'Upload the signed term sheet to proceed',
+  'Due Diligence→Portfolio': {
+    title: 'Add to Portfolio',
+    description: 'Confirm final deal parameters and upload signed term sheet',
     checks: [
-      { key: 'term_sheet', label: 'Signed term sheet (PDF)', type: 'file' },
-    ],
-  },
-  'Signed→Closed': {
-    title: 'Close Deal',
-    description: 'Confirm final deal parameters',
-    checks: [
-      { key: 'ev',           label: 'Final EV (€m)',        type: 'number' },
-      { key: 'ownership_pct',label: 'Ownership % acquired', type: 'number' },
+      { key: 'term_sheet',    label: 'Signed term sheet (PDF)', type: 'file' },
+      { key: 'ev',            label: 'Final EV (€m)',           type: 'number' },
+      { key: 'ownership_pct', label: 'Ownership % acquired',    type: 'number' },
     ],
   },
 }
@@ -134,7 +127,7 @@ export function getSectorMeta(name) {
   for (const group of SECTOR_TAXONOMY) {
     if (group.sectors.includes(name)) return { color: group.color, bg: group.bg, theme: group.theme }
   }
-  return { color: '#64748b', bg: '#f1f5f9', theme: null }  // custom / unknown
+  return { color: '#64748b', bg: '#f1f5f9', theme: null }
 }
 
 // Parse sectors JSON string → array
@@ -186,5 +179,20 @@ export const LOST_REASONS = [
   'Technology not proven',
   'Too early stage',
   'Deal fell through',
+  'Other',
+]
+
+export const POSTPONE_REASONS = [
+  'Too early stage',
+  'Theme outside scope',
+  'Valuation too high',
+  'Founder not ready to sell',
+  'Mandate mismatch',
+  'Geography outside scope',
+  'Technology not yet commercially proven',
+  'Awaiting commercial milestone',
+  'Competitive process ongoing',
+  'Complex structure',
+  'Timing — revisit later',
   'Other',
 ]

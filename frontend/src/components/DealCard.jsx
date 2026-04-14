@@ -139,7 +139,17 @@ export default function DealCard({ deal, onEdit, onDelete, onView, isOverlay = f
   const stopAndDelete = (e) => { e.stopPropagation(); onDelete(deal.id) }
   const handleClick   = () => { if (!isDragging && onView) onView(deal) }
 
-  const isOverdue = deal.next_action_due && new Date(deal.next_action_due) < new Date()
+  // Deadline status: 'overdue' | 'due-soon' (≤7 days) | null
+  const getDueStatus = (due) => {
+    if (!due) return null
+    const today = new Date(); today.setHours(0,0,0,0)
+    const dueDate = new Date(due + 'T00:00:00')
+    if (dueDate < today) return 'overdue'
+    const diff = (dueDate - today) / (1000 * 60 * 60 * 24)
+    if (diff <= 7) return 'due-soon'
+    return null
+  }
+  const dueStatus = getDueStatus(deal.next_action_due)
 
   return (
     <div
@@ -187,16 +197,23 @@ export default function DealCard({ deal, onEdit, onDelete, onView, isOverlay = f
         </div>
       )}
 
+      {/* Postpone reason badge (only in Postponed stage) */}
+      {deal.stage === 'Postponed' && deal.postpone_reason && (
+        <div className="card-postpone-reason">
+          <span className="postpone-reason-badge">{deal.postpone_reason}</span>
+        </div>
+      )}
+
       {/* Next action */}
       {(deal.next_action || deal.next_action_due) && (
-        <div className={`card-next-action${isOverdue ? ' overdue' : ''}`}>
+        <div className={`card-next-action${dueStatus ? ` ${dueStatus}` : ''}`}>
           <span className="card-next-action-text">
-            {isOverdue ? '⚠ ' : '→ '}
+            {dueStatus === 'overdue' ? '⚠ ' : '→ '}
             {deal.next_action || 'Follow up'}
           </span>
           {deal.next_action_due && (
             <span className="card-next-action-due">
-              {new Date(deal.next_action_due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              {new Date(deal.next_action_due + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
             </span>
           )}
         </div>

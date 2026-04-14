@@ -88,16 +88,19 @@ body {
 
 .search-icon {
   position: absolute;
-  left: 9px;
+  left: 10px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-muted);
   pointer-events: none;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
 .search-input {
-  padding-left: 28px;
-  width: 180px;
+  padding-left: 36px;
+  width: 190px;
 }
 
 .filter-select {
@@ -237,10 +240,10 @@ body {
 
 .kanban-board {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 10px;
   align-items: flex-start;
-  min-width: 1050px;
+  min-width: 960px;
 }
 
 .kanban-column {
@@ -2247,3 +2250,240 @@ body {
 .corr-entry:hover .corr-del { opacity: 1; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── POSTPONE REASON BADGE (card) ────────────────────────── */
+.card-postpone-reason {
+  margin-top: 4px;
+}
+
+.postpone-reason-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ── NEXT ACTION DEADLINE COLORS ─────────────────────────── */
+.card-next-action.due-soon {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.card-next-action.due-soon .card-next-action-due {
+  color: #d97706;
+  font-weight: 700;
+}
+
+.card-next-action.overdue {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #7f1d1d;
+}
+
+.card-next-action.overdue .card-next-action-due {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+/* ── POSTPONE MODAL ──────────────────────────────────────── */
+.postpone-modal { max-width: 560px; }
+
+.postpone-reasons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+/* ── ALERT BANNER ────────────────────────────────────────── */
+.alert-banner {
+  background: #fffbeb;
+  border-bottom: 1px solid #fcd34d;
+  position: sticky;
+  top: 60px;
+  z-index: 90;
+}
+
+.alert-banner-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.alert-banner-bar:hover { background: #fef3c7; }
+
+.alert-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.alert-icon {
+  font-size: 16px;
+  color: #d97706;
+}
+
+.alert-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.alert-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.alert-badge.overdue   { background: #fee2e2; color: #dc2626; }
+.alert-badge.due-today { background: #fef3c7; color: #d97706; }
+
+.alert-text { color: #92400e; font-weight: 500; }
+.alert-caret { font-size: 11px; color: #92400e; }
+
+.alert-list {
+  border-top: 1px solid #fcd34d;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.alert-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  border-bottom: 1px solid #fef3c7;
+  cursor: pointer;
+  gap: 12px;
+}
+
+.alert-item:hover { background: #fffbeb; }
+.alert-item.overdue { background: #fef2f2; }
+.alert-item.overdue:hover { background: #fee2e2; }
+
+.alert-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.alert-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d97706;
+  flex-shrink: 0;
+}
+
+.alert-status-dot.overdue { background: #ef4444; }
+
+.alert-company {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.alert-stage {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.alert-item-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.alert-action {
+  font-size: 12px;
+  color: var(--text-muted);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alert-due {
+  font-size: 11px;
+  font-weight: 600;
+  color: #d97706;
+}
+
+.alert-due.overdue { color: #ef4444; }
+
+/* ── DOMAIN LOGO PREVIEW (deal form) ─────────────────────── */
+.domain-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.domain-logo-preview {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.domain-logo-fallback {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+
+
+/* ── NEXT ACTION ASSIGNEES ───────────────────────────────── */
+.detail-next-action-assignees {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.detail-next-action.due-soon {
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+
+.detail-next-action.due-soon .detail-next-action-label {
+  color: #d97706;
+}
+
+.detail-next-action.overdue {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.detail-next-action.overdue .detail-next-action-label {
+  color: #ef4444;
+}

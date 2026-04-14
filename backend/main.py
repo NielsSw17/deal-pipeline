@@ -5,8 +5,10 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime
-import os, shutil, uuid, io, json
+from datetime import datetime, date as date_type
+import os, shutil, uuid, io, json, smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 import models
 from database import engine, get_db, Base
@@ -48,10 +50,13 @@ def _migrate():
             ("crit_geography",  "BOOLEAN DEFAULT 0"),
             ("crit_majority",   "BOOLEAN DEFAULT 0"),
             ("crit_ticket",     "BOOLEAN DEFAULT 0"),
-            ("ev_range",        "TEXT"),
-            ("sectors",         "TEXT"),
-            ("deal_type",       "TEXT"),
-            ("last_contact_at", "TEXT"),
+            ("ev_range",              "TEXT"),
+            ("sectors",               "TEXT"),
+            ("deal_type",             "TEXT"),
+            ("last_contact_at",       "TEXT"),
+            ("postpone_reason",       "TEXT"),
+            ("postpone_notes",        "TEXT"),
+            ("next_action_assignees", "TEXT"),
         ]
         for col, typedef in new_cols:
             col_name = col
@@ -82,15 +87,25 @@ def _migrate():
 
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS deal_contacts (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                deal_id    INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
-                name       TEXT NOT NULL,
-                role       TEXT,
-                email      TEXT,
-                phone      TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                deal_id      INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+                name         TEXT NOT NULL,
+                role         TEXT,
+                email        TEXT,
+                phone        TEXT,
+                linkedin_url TEXT,
+                notes        TEXT,
+                created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """))
+        # Add new columns to deal_contacts if they don't exist (for existing DBs)
+        try:
+            existing_contact_cols = {col["name"] for col in inspect(engine).get_columns("deal_contacts")}
+            for col, typedef in [("linkedin_url", "TEXT"), ("notes", "TEXT")]:
+                if col not in existing_contact_cols:
+                    conn.execute(text(f"ALTER TABLE deal_contacts ADD COLUMN {col} {typedef}"))
+        except Exception:
+            pass
 
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS contact_interactions (
@@ -161,10 +176,100 @@ def _migrate():
             )
         """))
 
+        # Team members table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS team_members (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL UNIQUE,
+                email      TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        default_team = ['Hans', 'Mark', 'Niels', 'Pauline', 'Bart', 'Pieter', 'Henk']
+        for name in default_team:
+            conn.execute(
+                text("INSERT OR IGNORE INTO team_members (name) VALUES (:n)"),
+                {"n": name},
+            )
+
         conn.commit()
 
 
 _migrate()
+
+
+# ── APScheduler (daily 08:00 Amsterdam alert emails) ─────────────────────────
+
+def _send_overdue_emails():
+    """Send daily alert emails for overdue / due-today next actions."""
+    from sqlalchemy.orm import sessionmaker as _SM
+    _Session = _SM(bind=engine)
+    db = _Session()
+    try:
+        today = date_type.today().isoformat()
+        overdue = (
+            db.query(models.Deal)
+            .filter(
+                models.Deal.next_action_due.isnot(None),
+                models.Deal.next_action_due <= today,
+                models.Deal.stage.not_in(["Lost"]),
+            )
+            .all()
+        )
+        if not overdue:
+            return
+
+        smtp_host = os.getenv("SMTP_HOST", "")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        smtp_user = os.getenv("SMTP_USER", "")
+        smtp_pass = os.getenv("SMTP_PASSWORD", "")
+        if not smtp_host or not smtp_user:
+            return
+
+        # Build email body
+        body_lines = ["<h2>DTE Deal Pipeline — Overdue Next Actions</h2><ul>"]
+        for d in overdue:
+            status = "OVERDUE" if d.next_action_due < today else "Due Today"
+            body_lines.append(
+                f"<li><b>{d.company_name}</b> ({d.stage}) — {d.next_action or 'Follow up'} "
+                f"— Deadline: {d.next_action_due} <span style='color:red'>[{status}]</span></li>"
+            )
+        body_lines.append("</ul>")
+        body_html = "\n".join(body_lines)
+
+        # Collect recipient emails from team_members table
+        team_emails = [tm.email for tm in db.query(models.TeamMember).filter(models.TeamMember.email.isnot(None)).all()]
+        if not team_emails:
+            return
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"DTE Deal Pipeline — {len(overdue)} overdue action(s)"
+        msg["From"] = smtp_user
+        msg["To"] = ", ".join(team_emails)
+        msg.attach(MIMEText(body_html, "html"))
+
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, team_emails, msg.as_string())
+    except Exception as e:
+        print(f"[scheduler] email error: {e}")
+    finally:
+        db.close()
+
+
+try:
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    import pytz
+    _scheduler = BackgroundScheduler()
+    _scheduler.add_job(
+        _send_overdue_emails,
+        CronTrigger(hour=8, minute=0, timezone=pytz.timezone("Europe/Amsterdam")),
+    )
+    _scheduler.start()
+except Exception:
+    pass  # APScheduler or pytz not available
 
 # ── Upload directory ──────────────────────────────────────────────────────────
 
@@ -183,7 +288,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-STAGE_ORDER = ["Sourcing", "Screening", "IC", "Due Diligence", "Signed", "Closed", "Postponed"]
+STAGE_ORDER = ["Sourcing", "Screening", "IC", "Due Diligence", "Portfolio", "Postponed"]
 
 # ── Stage history helper ──────────────────────────────────────────────────────
 
@@ -226,10 +331,13 @@ class DealBase(BaseModel):
     ic_memo:        Optional[str]   = None
     term_sheet:     Optional[str]   = None
     close_date:     Optional[str]   = None
-    next_action:    Optional[str]   = None
-    next_action_due:Optional[str]   = None
-    lost_reason:    Optional[str]   = None
-    lost_note:      Optional[str]   = None
+    next_action:          Optional[str]   = None
+    next_action_due:      Optional[str]   = None
+    next_action_assignees:Optional[str]   = None
+    lost_reason:          Optional[str]   = None
+    lost_note:            Optional[str]   = None
+    postpone_reason:      Optional[str]   = None
+    postpone_notes:       Optional[str]   = None
     # Criteria
     crit_thematic:   Optional[bool] = False
     crit_technology: Optional[bool] = False
@@ -271,10 +379,13 @@ class DealUpdate(BaseModel):
     ic_memo:        Optional[str]   = None
     term_sheet:     Optional[str]   = None
     close_date:     Optional[str]   = None
-    next_action:    Optional[str]   = None
-    next_action_due:Optional[str]   = None
-    lost_reason:    Optional[str]   = None
-    lost_note:      Optional[str]   = None
+    next_action:          Optional[str]   = None
+    next_action_due:      Optional[str]   = None
+    next_action_assignees:Optional[str]   = None
+    lost_reason:          Optional[str]   = None
+    lost_note:            Optional[str]   = None
+    postpone_reason:      Optional[str]   = None
+    postpone_notes:       Optional[str]   = None
     crit_thematic:   Optional[bool] = None
     crit_technology: Optional[bool] = None
     crit_commercial: Optional[bool] = None
@@ -334,17 +445,21 @@ class DocumentUpdate(BaseModel):
 
 
 class ContactCreate(BaseModel):
-    name:  str
-    role:  Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
+    name:         str
+    role:         Optional[str] = None
+    email:        Optional[str] = None
+    phone:        Optional[str] = None
+    linkedin_url: Optional[str] = None
+    notes:        Optional[str] = None
 
 
 class ContactUpdate(BaseModel):
-    name:  Optional[str] = None
-    role:  Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
+    name:         Optional[str] = None
+    role:         Optional[str] = None
+    email:        Optional[str] = None
+    phone:        Optional[str] = None
+    linkedin_url: Optional[str] = None
+    notes:        Optional[str] = None
 
 
 class InteractionCreate(BaseModel):
@@ -377,6 +492,8 @@ class ContactResponse(BaseModel):
     role:         Optional[str] = None
     email:        Optional[str] = None
     phone:        Optional[str] = None
+    linkedin_url: Optional[str] = None
+    notes:        Optional[str] = None
     created_at:   Optional[datetime] = None
     interactions: List[InteractionResponse] = []
     model_config = {"from_attributes": True}
@@ -406,6 +523,7 @@ def create_deal(deal: DealCreate, db: Session = Depends(get_db)):
     return db_deal
 
 
+@app.patch("/api/deals/{deal_id}", response_model=DealResponse)
 @app.put("/api/deals/{deal_id}", response_model=DealResponse)
 def update_deal(deal_id: int, deal: DealUpdate, db: Session = Depends(get_db)):
     db_deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
@@ -608,10 +726,12 @@ def create_contact(deal_id: int, contact: ContactCreate, db: Session = Depends(g
     return ContactResponse(
         id=db_contact.id, deal_id=db_contact.deal_id, name=db_contact.name,
         role=db_contact.role, email=db_contact.email, phone=db_contact.phone,
+        linkedin_url=db_contact.linkedin_url, notes=db_contact.notes,
         created_at=db_contact.created_at, interactions=[],
     )
 
 
+@app.patch("/api/contacts/{contact_id}", response_model=ContactResponse)
 @app.put("/api/contacts/{contact_id}", response_model=ContactResponse)
 def update_contact(contact_id: int, contact: ContactUpdate, db: Session = Depends(get_db)):
     db_contact = db.query(models.Contact).filter(models.Contact.id == contact_id).first()
@@ -630,6 +750,7 @@ def update_contact(contact_id: int, contact: ContactUpdate, db: Session = Depend
     return ContactResponse(
         id=db_contact.id, deal_id=db_contact.deal_id, name=db_contact.name,
         role=db_contact.role, email=db_contact.email, phone=db_contact.phone,
+        linkedin_url=db_contact.linkedin_url, notes=db_contact.notes,
         created_at=db_contact.created_at,
         interactions=[InteractionResponse.model_validate(i) for i in interactions],
     )
@@ -1067,8 +1188,8 @@ def get_analytics(db: Session = Depends(get_db)):
     active = [d for d in deals if d.stage != "Lost"]
     lost   = [d for d in deals if d.stage == "Lost"]
 
-    # 1. Funnel (show Sourcing→Closed progression + Postponed; no conversion for Postponed)
-    FUNNEL_STAGES = ["Sourcing", "Screening", "IC", "Due Diligence", "Signed", "Closed"]
+    # 1. Funnel (show Sourcing→Portfolio progression + Postponed; no conversion for Postponed)
+    FUNNEL_STAGES = ["Sourcing", "Screening", "IC", "Due Diligence", "Portfolio"]
     funnel = []
     for i, stage in enumerate(FUNNEL_STAGES):
         count      = len([d for d in deals if d.stage == stage])
@@ -1153,9 +1274,19 @@ def get_analytics(db: Session = Depends(get_db)):
             monthly[d.created_at.strftime("%b %y")] += 1
     monthly_data = [{"month": k, "count": v} for k, v in sorted(monthly.items())]
 
+    # 9. Postpone reasons breakdown
+    postpone_counts: dict = defaultdict(int)
+    for d in deals:
+        if d.stage == "Postponed" and d.postpone_reason:
+            postpone_counts[d.postpone_reason] += 1
+    postpone_breakdown = [
+        {"reason": k, "count": v}
+        for k, v in sorted(postpone_counts.items(), key=lambda x: -x[1])
+    ]
+
     # Totals — keys must match frontend KPIRow
-    closed_deals = [d for d in deals if d.stage == "Closed"]
-    win_rate = round(len(closed_deals) / (len(closed_deals) + len(lost)) * 100) if (closed_deals or lost) else 0
+    portfolio_deals = [d for d in deals if d.stage == "Portfolio"]
+    win_rate = round(len(portfolio_deals) / (len(portfolio_deals) + len(lost)) * 100) if (portfolio_deals or lost) else 0
 
     # Correspondence recency
     deals_with_contact = [d for d in active if d.last_contact_at]
@@ -1174,6 +1305,7 @@ def get_analytics(db: Session = Depends(get_db)):
         "sourcing":   sourcing_data,
         "criteria":   criteria_obj,
         "lost":       lost_breakdown,
+        "postponed":  postpone_breakdown,
         "team":       team_data,
         "monthly":    monthly_data,
         "totals": {
@@ -1181,12 +1313,79 @@ def get_analytics(db: Session = Depends(get_db)):
             "lost_count":   len(lost),
             "total":        len(deals),
             "pipeline_ev":  round(sum(d.ev or 0 for d in active), 1),
-            "closed_ev":    round(sum(d.ev or 0 for d in closed_deals), 1),
+            "closed_ev":    round(sum(d.ev or 0 for d in portfolio_deals), 1),
             "win_rate":              win_rate,
             "postponed_count":       postponed_count,
             "avg_days_since_contact": avg_days_since_contact,
         },
     }
+
+
+# ── Alerts ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/alerts/overdue")
+def get_overdue_alerts(db: Session = Depends(get_db)):
+    today = date_type.today().isoformat()
+    overdue_deals = (
+        db.query(models.Deal)
+        .filter(
+            models.Deal.next_action_due.isnot(None),
+            models.Deal.next_action_due <= today,
+            models.Deal.stage.not_in(["Lost"]),
+        )
+        .order_by(models.Deal.next_action_due)
+        .all()
+    )
+    return [
+        {
+            "id":                   d.id,
+            "company_name":         d.company_name,
+            "stage":                d.stage,
+            "next_action":          d.next_action,
+            "next_action_due":      d.next_action_due,
+            "next_action_assignees": d.next_action_assignees,
+            "is_overdue":           d.next_action_due < today,
+        }
+        for d in overdue_deals
+    ]
+
+
+@app.post("/api/alerts/send-email")
+def send_alert_emails(db: Session = Depends(get_db)):
+    try:
+        _send_overdue_emails()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# ── Team members CRUD ─────────────────────────────────────────────────────────
+
+class TeamMemberResponse(BaseModel):
+    id:    int
+    name:  str
+    email: Optional[str] = None
+    model_config = {"from_attributes": True}
+
+class TeamMemberUpdate(BaseModel):
+    email: Optional[str] = None
+
+
+@app.get("/api/team-members", response_model=List[TeamMemberResponse])
+def get_team_members(db: Session = Depends(get_db)):
+    return db.query(models.TeamMember).order_by(models.TeamMember.name).all()
+
+
+@app.patch("/api/team-members/{member_id}", response_model=TeamMemberResponse)
+def update_team_member(member_id: int, update: TeamMemberUpdate, db: Session = Depends(get_db)):
+    member = db.query(models.TeamMember).filter(models.TeamMember.id == member_id).first()
+    if not member:
+        raise HTTPException(404, "Team member not found")
+    if update.email is not None:
+        member.email = update.email
+    db.commit()
+    db.refresh(member)
+    return member
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

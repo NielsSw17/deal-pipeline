@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { api } from '../api'
 import { STAGES, TEAM, SECTOR_TAXONOMY, DEAL_TYPES, COUNTRIES, GEOGRAPHIES, LOST_REASONS, SOURCING_OPTIONS, OWNER_COLORS, getSectorMeta, parseSectors } from '../constants'
 
@@ -177,9 +177,28 @@ function SectorMultiSelect({ selected, onChange }) {
 }
 
 export default function DealModal({ deal, onSave, onClose }) {
-  const [form, setForm]     = useState(EMPTY)
-  const [saving, setSaving] = useState(false)
-  const [errors, setErrors] = useState({})
+  const [form, setForm]         = useState(EMPTY)
+  const [saving, setSaving]     = useState(false)
+  const [errors, setErrors]     = useState({})
+  const [logoUrl, setLogoUrl]   = useState(null)
+  const [logoFailed, setLogoFailed] = useState(false)
+
+  const handleDomainBlur = useCallback(() => {
+    const domain = form.domain?.trim().replace(/^https?:\/\//, '').replace(/\/$/, '')
+    if (domain) {
+      setLogoFailed(false)
+      setLogoUrl(`https://logo.clearbit.com/${domain}`)
+    } else {
+      setLogoUrl(null)
+    }
+  }, [form.domain])
+
+  useEffect(() => {
+    if (deal?.domain) {
+      setLogoUrl(`https://logo.clearbit.com/${deal.domain}`)
+      setLogoFailed(false)
+    }
+  }, [deal?.domain])
 
   useEffect(() => {
     setForm(deal ? {
@@ -284,13 +303,29 @@ export default function DealModal({ deal, onSave, onClose }) {
 
               <div className="form-group full">
                 <label className="form-label">Website / Domain</label>
-                <input
-                  className="form-input"
-                  value={form.domain}
-                  onChange={set('domain')}
-                  placeholder="e.g. company.com"
-                />
-                <span className="field-hint">Used to fetch the company logo automatically</span>
+                <div className="domain-input-wrap">
+                  {logoUrl && !logoFailed && (
+                    <img
+                      className="domain-logo-preview"
+                      src={logoUrl}
+                      alt="logo"
+                      onError={() => setLogoFailed(true)}
+                    />
+                  )}
+                  {(!logoUrl || logoFailed) && form.domain && (
+                    <div className="domain-logo-fallback">
+                      {form.company_name?.slice(0, 2).toUpperCase() || '?'}
+                    </div>
+                  )}
+                  <input
+                    className="form-input"
+                    value={form.domain}
+                    onChange={set('domain')}
+                    onBlur={handleDomainBlur}
+                    placeholder="e.g. company.com"
+                  />
+                </div>
+                <span className="field-hint">Logo fetched automatically via Clearbit on blur</span>
               </div>
 
               <div className="form-group">
