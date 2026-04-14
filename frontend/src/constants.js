@@ -1,16 +1,17 @@
-export const STAGES = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed', 'Lost']
+export const STAGES = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed', 'Postponed', 'Lost']
 
-// Forward-progression order (Lost excluded from gate logic)
+// Forward-progression order (Lost/Postponed excluded from gate logic)
 export const STAGE_ORDER = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed']
 
 export const STAGE_COLORS = {
-  Sourcing:        { bar: '#3b82f6', bg: '#eff6ff', color: '#3b82f6' },
-  Screening:       { bar: '#8b5cf6', bg: '#f5f3ff', color: '#8b5cf6' },
-  IC:              { bar: '#f59e0b', bg: '#fffbeb', color: '#f59e0b' },
-  'Due Diligence': { bar: '#f97316', bg: '#fff7ed', color: '#f97316' },
-  Signed:          { bar: '#06b6d4', bg: '#ecfeff', color: '#06b6d4' },
-  Closed:          { bar: '#10b981', bg: '#f0fdf4', color: '#10b981' },
-  Lost:            { bar: '#94a3b8', bg: '#f8fafc', color: '#94a3b8' },
+  Sourcing:        { bar: '#3b82f6', bg: '#eff6ff',  color: '#3b82f6' },
+  Screening:       { bar: '#8b5cf6', bg: '#f5f3ff',  color: '#8b5cf6' },
+  IC:              { bar: '#f59e0b', bg: '#fffbeb',  color: '#f59e0b' },
+  'Due Diligence': { bar: '#f97316', bg: '#fff7ed',  color: '#f97316' },
+  Signed:          { bar: '#06b6d4', bg: '#ecfeff',  color: '#06b6d4' },
+  Closed:          { bar: '#10b981', bg: '#f0fdf4',  color: '#10b981' },
+  Postponed:       { bar: '#6b7280', bg: '#f9fafb',  color: '#6b7280' },
+  Lost:            { bar: '#94a3b8', bg: '#f8fafc',  color: '#94a3b8' },
 }
 
 // Stage progression gate rules
@@ -52,8 +53,7 @@ export const STAGE_GATES = {
     title: 'Start Due Diligence',
     description: 'Complete before commencing due diligence',
     checks: [
-      { key: 'ic_date', label: 'IC meeting date', type: 'date' },
-      { key: 'ic_memo', label: 'IC memo (PDF)',    type: 'file' },
+      { key: 'ic_memo', label: 'IC memo (PDF)', type: 'file' },
     ],
   },
   'Due Diligence→Signed': {
@@ -69,7 +69,6 @@ export const STAGE_GATES = {
     checks: [
       { key: 'ev',           label: 'Final EV (€m)',        type: 'number' },
       { key: 'ownership_pct',label: 'Ownership % acquired', type: 'number' },
-      { key: 'close_date',   label: 'Close date',           type: 'date'   },
     ],
   },
 }
@@ -86,11 +85,63 @@ export const OWNER_COLORS = {
   Henk:    '#62b790',
 }
 
+// Legacy THEMES — kept for backward-compat with old data; new code uses SECTOR_TAXONOMY
 export const THEMES = [
   { value: 'Energy', color: '#b45309', bg: '#fffbeb', dot: '#f59e0b' },
   { value: 'Food',   color: '#15803d', bg: '#f0fdf4', dot: '#22c55e' },
   { value: 'Health', color: '#0f766e', bg: '#f0fdfa', dot: '#14b8a6' },
 ]
+
+// ── Sector taxonomy ────────────────────────────────────────────────────────────
+export const SECTOR_TAXONOMY = [
+  {
+    theme: 'Energy',
+    color: '#b45309',
+    bg:    '#fffbeb',
+    sectors: [
+      'Renewable Energy',
+      'Smart Grid',
+      'Energy Storage',
+      'Energy Efficiency',
+      'Energy Management',
+    ],
+  },
+  {
+    theme: 'Food',
+    color: '#15803d',
+    bg:    '#f0fdf4',
+    sectors: [
+      'AgTech',
+      'Food Processing Technology',
+      'Post-Harvest & Supply Chain',
+    ],
+  },
+  {
+    theme: 'Health',
+    color: '#0f766e',
+    bg:    '#f0fdfa',
+    sectors: [
+      'MedTech',
+      'Digital Health',
+      'Prevention',
+      'Remote Monitoring Technology',
+    ],
+  },
+]
+
+// Returns { color, bg, theme } for any sector name
+export function getSectorMeta(name) {
+  for (const group of SECTOR_TAXONOMY) {
+    if (group.sectors.includes(name)) return { color: group.color, bg: group.bg, theme: group.theme }
+  }
+  return { color: '#64748b', bg: '#f1f5f9', theme: null }  // custom / unknown
+}
+
+// Parse sectors JSON string → array
+export function parseSectors(raw) {
+  if (!raw) return []
+  try { return JSON.parse(raw) } catch { return [] }
+}
 
 export const SOURCING_OPTIONS = [
   { value: 'Proprietary', color: '#ffffff', bg: '#021d49' },
@@ -107,6 +158,8 @@ export const CRITERIA = [
   { key: 'crit_majority',   label: 'Majority / significant minority stake possible' },
   { key: 'crit_ticket',     label: 'Ticket size €10m–€75m equity' },
 ]
+
+export const DEAL_TYPES = ['Platform', 'Add-on', 'Carve-out']
 
 export const SECTORS = [
   'Technology', 'Healthcare', 'Financial Services', 'Consumer', 'Industrials',

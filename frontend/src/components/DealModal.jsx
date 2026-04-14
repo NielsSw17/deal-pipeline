@@ -1,33 +1,30 @@
-import { useState, useEffect } from 'react'
-import { STAGES, TEAM, THEMES, SECTORS, COUNTRIES, GEOGRAPHIES, LOST_REASONS, SOURCING_OPTIONS, OWNER_COLORS } from '../constants'
+import { useState, useEffect, useRef } from 'react'
+import { api } from '../api'
+import { STAGES, TEAM, SECTOR_TAXONOMY, DEAL_TYPES, COUNTRIES, GEOGRAPHIES, LOST_REASONS, SOURCING_OPTIONS, OWNER_COLORS, getSectorMeta, parseSectors } from '../constants'
 
 const EMPTY = {
-  company_name:    '',
-  stage:           'Sourcing',
-  sector:          '',
-  ev:              '',
-  country:         '',
-  owners:          [],   // multi-select
-  domain:          '',
-  theme:           '',
-  notes:           '',
-  sourcing:        '',
-  revenue:         '',
-  ebitda:          '',
-  ownership_pct:   '',
-  geography:       '',
-  co_investor:     '',
-  thesis:          '',
-  ic_date:         '',
-  close_date:      '',
-  next_action:     '',
-  next_action_due: '',
-  lost_reason:     '',
+  company_name:  '',
+  stage:         'Sourcing',
+  sectors:       [],   // array of sector names
+  deal_type:     '',
+  ev:            '',
+  country:       '',
+  owners:        [],
+  domain:        '',
+  notes:         '',
+  sourcing:      '',
+  revenue:       '',
+  ebitda:        '',
+  ownership_pct: '',
+  geography:     '',
+  co_investor:   '',
+  thesis:        '',
+  next_action:   '',
+  lost_reason:   '',
 }
 
 function parseOwners(deal) {
   if (!deal) return []
-  // Prefer the new owners field; fall back to owner
   if (deal.owners) return deal.owners.split(',').map(o => o.trim()).filter(Boolean)
   if (deal.owner)  return [deal.owner]
   return []
@@ -50,14 +47,131 @@ function OwnerMultiSelect({ selected, onChange }) {
               else        onChange([...selected, m])
             }}
           >
-            <span
-              className="owner-chip-dot"
-              style={{ background: active ? '#ffffff66' : color }}
-            />
+            <span className="owner-chip-dot" style={{ background: active ? '#ffffff66' : color }} />
             {m}
           </button>
         )
       })}
+    </div>
+  )
+}
+
+function SectorMultiSelect({ selected, onChange }) {
+  const [sectors, setSectors] = useState([])
+  const [open, setOpen]       = useState(false)
+  const [newName, setNewName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const ref = useRef()
+
+  useEffect(() => {
+    api.getSectors().then(setSectors).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const toggle = (name) => {
+    if (selected.includes(name)) onChange(selected.filter(s => s !== name))
+    else onChange([...selected, name])
+  }
+
+  const handleCreate = async (e) => {
+    e.preventDefault()
+    const name = newName.trim()
+    if (!name) return
+    setCreating(true)
+    try {
+      const sector = await api.createSector({ name, is_custom: true })
+      setSectors(prev => [...prev, sector])
+      onChange([...selected, sector.name])
+      setNewName('')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const groups = SECTOR_TAXONOMY.map(group => ({
+    ...group,
+    items: sectors.filter(s => s.theme === group.theme && !s.is_custom),
+  }))
+  const customItems = sectors.filter(s => s.is_custom)
+
+  return (
+    <div className="sector-multiselect" ref={ref}>
+      <button
+        type="button"
+        className="sector-dropdown-trigger"
+        onClick={() => setOpen(o => !o)}
+      >
+        {selected.length === 0 ? (
+          <span className="sector-placeholder">— Select sectors —</span>
+        ) : (
+          <div className="sector-pills-wrap">
+            {selected.map(s => {
+              const meta = getSectorMeta(s)
+              return (
+                <span key={s} className="sector-pill" style={{ background: meta.bg, color: meta.color }}>
+                  {s}
+                </span>
+              )
+            })}
+          </div>
+        )}
+        <span className="sector-caret">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="sector-dropdown-panel">
+          {groups.map(group => (
+            group.items.length > 0 && (
+              <div key={group.theme} className="sector-group">
+                <div className="sector-group-label" style={{ color: group.color }}>{group.theme}</div>
+                {group.items.map(s => (
+                  <label key={s.name} className="sector-check-item">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(s.name)}
+                      onChange={() => toggle(s.name)}
+                    />
+                    <span>{s.name}</span>
+                  </label>
+                ))}
+              </div>
+            )
+          ))}
+          {customItems.length > 0 && (
+            <div className="sector-group">
+              <div className="sector-group-label" style={{ color: '#64748b' }}>Custom</div>
+              {customItems.map(s => (
+                <label key={s.name} className="sector-check-item">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(s.name)}
+                    onChange={() => toggle(s.name)}
+                  />
+                  <span>{s.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <form className="sector-create-row" onSubmit={handleCreate}>
+            <input
+              className="form-input sector-create-input"
+              placeholder="New custom sector…"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+            />
+            <button type="submit" className="btn btn-ghost btn-xs" disabled={creating || !newName.trim()}>
+              {creating ? '…' : '+ Create'}
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   )
 }
@@ -69,27 +183,24 @@ export default function DealModal({ deal, onSave, onClose }) {
 
   useEffect(() => {
     setForm(deal ? {
-      company_name:    deal.company_name    || '',
-      stage:           deal.stage           || 'Sourcing',
-      sector:          deal.sector          || '',
-      ev:              deal.ev              ?? '',
-      country:         deal.country         || '',
-      owners:          parseOwners(deal),
-      domain:          deal.domain          || '',
-      theme:           deal.theme           || '',
-      notes:           deal.notes           || '',
-      sourcing:        deal.sourcing        || '',
-      revenue:         deal.revenue         ?? '',
-      ebitda:          deal.ebitda          ?? '',
-      ownership_pct:   deal.ownership_pct   ?? '',
-      geography:       deal.geography       || '',
-      co_investor:     deal.co_investor     || '',
-      thesis:          deal.thesis          || '',
-      ic_date:         deal.ic_date         || '',
-      close_date:      deal.close_date      || '',
-      next_action:     deal.next_action     || '',
-      next_action_due: deal.next_action_due || '',
-      lost_reason:     deal.lost_reason     || '',
+      company_name:  deal.company_name  || '',
+      stage:         deal.stage         || 'Sourcing',
+      sectors:       parseSectors(deal.sectors),
+      deal_type:     deal.deal_type     || '',
+      ev:            deal.ev            ?? '',
+      country:       deal.country       || '',
+      owners:        parseOwners(deal),
+      domain:        deal.domain        || '',
+      notes:         deal.notes         || '',
+      sourcing:      deal.sourcing      || '',
+      revenue:       deal.revenue       ?? '',
+      ebitda:        deal.ebitda        ?? '',
+      ownership_pct: deal.ownership_pct ?? '',
+      geography:     deal.geography     || '',
+      co_investor:   deal.co_investor   || '',
+      thesis:        deal.thesis        || '',
+      next_action:   deal.next_action   || '',
+      lost_reason:   deal.lost_reason   || '',
     } : EMPTY)
     setErrors({})
   }, [deal])
@@ -117,28 +228,25 @@ export default function DealModal({ deal, onSave, onClose }) {
     try {
       const ownersStr = form.owners.join(',') || null
       await onSave({
-        company_name:    form.company_name.trim(),
-        stage:           form.stage,
-        sector:          form.sector          || null,
-        ev:              form.ev !== ''           ? Number(form.ev)            : null,
-        country:         form.country         || null,
-        owner:           form.owners[0]       || null,   // keep legacy field
-        owners:          ownersStr,
-        domain:          form.domain?.trim().replace(/^https?:\/\//, '').replace(/\/$/, '') || null,
-        theme:           form.theme           || null,
-        notes:           form.notes           || null,
-        sourcing:        form.sourcing        || null,
-        revenue:         form.revenue !== ''      ? Number(form.revenue)       : null,
-        ebitda:          form.ebitda !== ''        ? Number(form.ebitda)        : null,
-        ownership_pct:   form.ownership_pct !== '' ? Number(form.ownership_pct) : null,
-        geography:       form.geography       || null,
-        co_investor:     form.co_investor     || null,
-        thesis:          form.thesis          || null,
-        ic_date:         form.ic_date         || null,
-        close_date:      form.close_date      || null,
-        next_action:     form.next_action     || null,
-        next_action_due: form.next_action_due || null,
-        lost_reason:     form.lost_reason     || null,
+        company_name:  form.company_name.trim(),
+        stage:         form.stage,
+        sectors:       form.sectors.length ? JSON.stringify(form.sectors) : null,
+        deal_type:     form.deal_type     || null,
+        ev:            form.ev !== ''           ? Number(form.ev)            : null,
+        country:       form.country       || null,
+        owner:         form.owners[0]     || null,
+        owners:        ownersStr,
+        domain:        form.domain?.trim().replace(/^https?:\/\//, '').replace(/\/$/, '') || null,
+        notes:         form.notes         || null,
+        sourcing:      form.sourcing      || null,
+        revenue:       form.revenue !== ''      ? Number(form.revenue)       : null,
+        ebitda:        form.ebitda !== ''        ? Number(form.ebitda)        : null,
+        ownership_pct: form.ownership_pct !== '' ? Number(form.ownership_pct) : null,
+        geography:     form.geography     || null,
+        co_investor:   form.co_investor   || null,
+        thesis:        form.thesis        || null,
+        next_action:   form.next_action   || null,
+        lost_reason:   form.lost_reason   || null,
       })
     } finally {
       setSaving(false)
@@ -168,7 +276,7 @@ export default function DealModal({ deal, onSave, onClose }) {
                   className={`form-input${errors.company_name ? ' input-error' : ''}`}
                   value={form.company_name}
                   onChange={set('company_name')}
-                  placeholder="e.g. Perfotec"
+                  placeholder="e.g. Company"
                   autoFocus
                 />
                 {errors.company_name && <span className="field-error">{errors.company_name}</span>}
@@ -180,7 +288,7 @@ export default function DealModal({ deal, onSave, onClose }) {
                   className="form-input"
                   value={form.domain}
                   onChange={set('domain')}
-                  placeholder="e.g. perfotec.com"
+                  placeholder="e.g. company.com"
                 />
                 <span className="field-hint">Used to fetch the company logo automatically</span>
               </div>
@@ -203,10 +311,10 @@ export default function DealModal({ deal, onSave, onClose }) {
               )}
 
               <div className="form-group">
-                <label className="form-label">Sector</label>
-                <select className="form-select" value={form.sector} onChange={set('sector')}>
+                <label className="form-label">Deal Type</label>
+                <select className="form-select" value={form.deal_type} onChange={set('deal_type')}>
                   <option value="">— Select —</option>
-                  {SECTORS.map(s => <option key={s}>{s}</option>)}
+                  {DEAL_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
 
@@ -224,6 +332,15 @@ export default function DealModal({ deal, onSave, onClose }) {
                   <option value="">— Select —</option>
                   {GEOGRAPHIES.map(g => <option key={g}>{g}</option>)}
                 </select>
+              </div>
+
+              {/* ── Sectors ── */}
+              <div className="form-group full">
+                <label className="form-label">Sectors</label>
+                <SectorMultiSelect
+                  selected={form.sectors}
+                  onChange={sectors => setForm(f => ({ ...f, sectors }))}
+                />
               </div>
 
               {/* ── Financials ── */}
@@ -277,7 +394,7 @@ export default function DealModal({ deal, onSave, onClose }) {
                 {errors.ownership_pct && <span className="field-error">{errors.ownership_pct}</span>}
               </div>
 
-              {/* ── Deal details ── */}
+              {/* ── Deal Details ── */}
               <div className="form-section-label full">Deal Details</div>
 
               {/* Sourcing visual picker */}
@@ -337,48 +454,7 @@ export default function DealModal({ deal, onSave, onClose }) {
                 />
               </div>
 
-              {/* ── DTE Theme ── */}
-              <div className="form-group full">
-                <label className="form-label">DTE Theme</label>
-                <div className="theme-picker">
-                  <button
-                    type="button"
-                    className={`theme-option none-option${form.theme === '' ? ' selected' : ''}`}
-                    onClick={() => setForm(f => ({ ...f, theme: '' }))}
-                  >
-                    None
-                  </button>
-                  {THEMES.map(t => (
-                    <button
-                      key={t.value}
-                      type="button"
-                      className={`theme-option${form.theme === t.value ? ' selected' : ''}`}
-                      style={form.theme === t.value
-                        ? { background: t.bg, color: t.color, borderColor: t.dot }
-                        : {}}
-                      onClick={() => setForm(f => ({ ...f, theme: t.value }))}
-                    >
-                      <span className="theme-dot" style={{ background: t.dot }} />
-                      {t.value}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* ── Process dates ── */}
-              <div className="form-section-label full">Process</div>
-
-              <div className="form-group">
-                <label className="form-label">IC date</label>
-                <input className="form-input" type="date" value={form.ic_date} onChange={set('ic_date')} />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Close date</label>
-                <input className="form-input" type="date" value={form.close_date} onChange={set('close_date')} />
-              </div>
-
-              {/* ── Next action ── */}
+              {/* ── Next Action ── */}
               <div className="form-section-label full">Next Action</div>
 
               <div className="form-group full">
@@ -389,11 +465,6 @@ export default function DealModal({ deal, onSave, onClose }) {
                   onChange={set('next_action')}
                   placeholder="e.g. Send term sheet, Schedule management call…"
                 />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Due date</label>
-                <input className="form-input" type="date" value={form.next_action_due} onChange={set('next_action_due')} />
               </div>
 
             </div>

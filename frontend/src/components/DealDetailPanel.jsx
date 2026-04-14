@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '../api'
-import { TEAM, OWNER_COLORS, THEMES, STAGE_COLORS, CRITERIA, SOURCING_OPTIONS } from '../constants'
+import { TEAM, OWNER_COLORS, THEMES, STAGE_COLORS, CRITERIA, SOURCING_OPTIONS, parseSectors, getSectorMeta } from '../constants'
 import { exportDealToPDF } from '../utils/export'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -444,7 +444,7 @@ function CriteriaSection({ deal, onUpdate }) {
 }
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
-export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate }) {
+export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate, onOpenTimeline }) {
   const [notes, setNotes]           = useState([])
   const [loadingNotes, setLoadingNotes] = useState(true)
   const [noteText, setNoteText]     = useState('')
@@ -501,11 +501,12 @@ export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate }) {
     setEditingNoteId(null)
   }
 
-  const stageColor  = STAGE_COLORS[deal.stage] || {}
-  const themeMeta   = THEMES.find(t => t.value === deal.theme)
-  const pinnedNote  = notes.find(n => n.is_pinned)
-  const chronoNotes = [...notes].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-  const isOverdue   = deal.next_action_due && new Date(deal.next_action_due) < new Date()
+  const stageColor   = STAGE_COLORS[deal.stage] || {}
+  const themeMeta    = THEMES.find(t => t.value === deal.theme)
+  const sectorList   = parseSectors(deal.sectors)
+  const pinnedNote   = notes.find(n => n.is_pinned)
+  const chronoNotes  = [...notes].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+  const isOverdue    = deal.next_action_due && new Date(deal.next_action_due) < new Date()
 
   return (
     <div className="detail-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -525,6 +526,11 @@ export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate }) {
             </div>
           </div>
           <div className="detail-header-right">
+            {onOpenTimeline && (
+              <button className="btn btn-ghost btn-sm" onClick={() => onOpenTimeline(deal)}>
+                📋 Timeline
+              </button>
+            )}
             <button className="btn btn-ghost btn-sm" onClick={() => onEdit(deal)}>Edit</button>
             <button
               className="btn btn-ghost btn-sm"
@@ -546,6 +552,14 @@ export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate }) {
             <div className="thesis-box-label">Investment Thesis</div>
             <p className="thesis-box-text">{pinnedNote?.text || deal.thesis}</p>
             {pinnedNote && <div className="thesis-box-meta">— {pinnedNote.author}</div>}
+          </div>
+        )}
+
+        {/* ── Last contact ── */}
+        {deal.last_contact_at && (
+          <div className="detail-last-contact">
+            <span className="detail-last-contact-label">Last contact</span>
+            <span className="detail-last-contact-date">{fmtDate(deal.last_contact_at)}</span>
           </div>
         )}
 
@@ -575,7 +589,25 @@ export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate }) {
               <div className="detail-section">
                 <div className="detail-section-title">Overview</div>
                 <div className="detail-fields">
-                  <Field label="Sector"       value={deal.sector} />
+                  {/* Sectors pills */}
+                  <div className="detail-field detail-field-full">
+                    <span className="detail-field-label">Sectors</span>
+                    <span className="detail-field-value">
+                      {sectorList.length > 0 ? (
+                        <div className="sector-pills-wrap">
+                          {sectorList.map(s => {
+                            const meta = getSectorMeta(s)
+                            return (
+                              <span key={s} className="sector-pill" style={{ background: meta.bg, color: meta.color }}>{s}</span>
+                            )
+                          })}
+                        </div>
+                      ) : deal.sector ? (
+                        <span className="sector-pill" style={{ background: '#f1f5f9', color: '#64748b' }}>{deal.sector}</span>
+                      ) : '—'}
+                    </span>
+                  </div>
+                  <Field label="Deal Type"    value={deal.deal_type} />
                   <Field label="Country"      value={deal.country} />
                   <Field label="Geography"    value={deal.geography} />
                   <Field label="EV (€m)"      value={deal.ev_range ? `€${deal.ev_range}m` : deal.ev != null ? `€${deal.ev}m` : null} />
@@ -640,12 +672,10 @@ export default function DealDetailPanel({ deal, onClose, onEdit, onUpdate }) {
               {/* DTE Investment Criteria checklist */}
               {onUpdate && <CriteriaSection deal={deal} onUpdate={onUpdate} />}
 
-              {(deal.ic_date || deal.ic_memo || deal.term_sheet || deal.close_date) && (
+              {(deal.ic_memo || deal.term_sheet) && (
                 <div className="detail-section">
-                  <div className="detail-section-title">Process Milestones</div>
+                  <div className="detail-section-title">Process Documents</div>
                   <div className="detail-fields">
-                    <Field label="IC date"    value={fmtDate(deal.ic_date)} />
-                    <Field label="Close date" value={fmtDate(deal.close_date)} />
                     {deal.ic_memo && (
                       <div className="detail-field">
                         <span className="detail-field-label">IC memo</span>

@@ -9,24 +9,26 @@ class Deal(Base):
     id            = Column(Integer, primary_key=True, index=True)
     company_name  = Column(String, nullable=False)
     stage         = Column(String, nullable=False, default="Sourcing")
-    sector        = Column(String, nullable=True)
+    sector        = Column(String, nullable=True)    # legacy single-sector
+    sectors       = Column(Text,   nullable=True)    # JSON array of sector names
+    deal_type     = Column(String, nullable=True)    # Platform / Add-on / Carve-out
     ev            = Column(Float,  nullable=True)
-    ev_range      = Column(String, nullable=True)   # e.g. "10-20" from import
+    ev_range      = Column(String, nullable=True)    # e.g. "10-20" from import
     country       = Column(String, nullable=True)
-    owner         = Column(String, nullable=True)   # legacy single owner
-    owners        = Column(String, nullable=True)   # comma-separated multi-owner
-    notes         = Column(String, nullable=True)   # legacy single-note field
+    owner         = Column(String, nullable=True)    # legacy single owner
+    owners        = Column(String, nullable=True)    # comma-separated multi-owner
+    notes         = Column(String, nullable=True)    # legacy single-note field
     position      = Column(Integer, default=0, nullable=False)
     domain        = Column(String, nullable=True)
-    theme         = Column(String, nullable=True)
+    theme         = Column(String, nullable=True)    # legacy; derived from sectors
     # Sourcing
-    sourcing      = Column(String, nullable=True)   # Proprietary/Auction/Referral/Co-investor
+    sourcing      = Column(String, nullable=True)    # Proprietary/Auction/Referral/Co-investor
     # DTE fields
     revenue       = Column(Float,  nullable=True)
     ebitda        = Column(Float,  nullable=True)
     ownership_pct = Column(Float,  nullable=True)
     geography     = Column(String, nullable=True)
-    deal_source   = Column(String, nullable=True)   # legacy; use sourcing going forward
+    deal_source   = Column(String, nullable=True)    # legacy; use sourcing going forward
     co_investor   = Column(String, nullable=True)
     thesis        = Column(Text,   nullable=True)
     ic_date       = Column(String, nullable=True)
@@ -46,6 +48,8 @@ class Deal(Base):
     crit_geography  = Column(Boolean, default=False, nullable=False)
     crit_majority   = Column(Boolean, default=False, nullable=False)
     crit_ticket     = Column(Boolean, default=False, nullable=False)
+    # Correspondence recency
+    last_contact_at = Column(String, nullable=True)  # date string of most recent correspondence
 
     created_at    = Column(DateTime, server_default=func.now())
     updated_at    = Column(DateTime, onupdate=func.now())
@@ -106,3 +110,31 @@ class DealStageHistory(Base):
     stage      = Column(String,  nullable=False)
     entered_at = Column(DateTime, server_default=func.now(), nullable=False)
     exited_at  = Column(DateTime, nullable=True)
+
+
+class Sector(Base):
+    """Sector taxonomy — built-in + custom entries."""
+    __tablename__ = "sectors"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    name       = Column(String,  nullable=False, unique=True)
+    theme      = Column(String,  nullable=True)   # Energy / Food / Health / None for custom
+    is_custom  = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class Correspondence(Base):
+    """Correspondence timeline entry for a deal."""
+    __tablename__ = "correspondence"
+
+    id                    = Column(Integer, primary_key=True, index=True)
+    deal_id               = Column(Integer, ForeignKey("deals.id", ondelete="CASCADE"), nullable=False)
+    type                  = Column(String, nullable=False)   # Meeting/Call/Email/Note/Document Upload
+    date                  = Column(String, nullable=False)
+    team_members          = Column(String, nullable=True)    # comma-separated team names
+    external_participants = Column(String, nullable=True)   # free text
+    subject               = Column(String, nullable=True)
+    notes                 = Column(Text,   nullable=True)
+    filename              = Column(String, nullable=True)
+    original_filename     = Column(String, nullable=True)
+    created_at            = Column(DateTime, server_default=func.now())

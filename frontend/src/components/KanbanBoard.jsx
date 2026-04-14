@@ -11,8 +11,8 @@ import {
 import KanbanColumn from './KanbanColumn'
 import DealCard from './DealCard'
 
-// Only show 6 active stages in the board; Lost has its own dedicated view
-const BOARD_STAGES = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed']
+// Show 7 active stages in the board; Lost has its own dedicated view
+const BOARD_STAGES = ['Sourcing', 'Screening', 'IC', 'Due Diligence', 'Signed', 'Closed', 'Postponed']
 
 export default function KanbanBoard({ deals, onUpdateDeal, onEditDeal, onDeleteDeal, onViewDeal }) {
   const [activeId, setActiveId] = useState(null)

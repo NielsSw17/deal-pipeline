@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { OWNER_COLORS, THEMES, SOURCING_OPTIONS, CRITERIA } from '../constants'
+import { OWNER_COLORS, THEMES, SOURCING_OPTIONS, CRITERIA, parseSectors, getSectorMeta } from '../constants'
 
 function CompanyLogo({ domain, name }) {
   const [failed, setFailed] = useState(false)
@@ -78,14 +78,37 @@ function ThemePill({ theme }) {
   const meta = THEMES.find(t => t.value === theme)
   if (!meta) return null
   return (
-    <span
-      className="theme-pill"
-      style={{ background: meta.bg, color: meta.color }}
-    >
+    <span className="theme-pill" style={{ background: meta.bg, color: meta.color }}>
       <span className="theme-dot" style={{ background: meta.dot }} />
       {theme}
     </span>
   )
+}
+
+function SectorPills({ sectors, theme }) {
+  const list = parseSectors(sectors)
+  if (list.length > 0) {
+    return (
+      <>
+        {list.slice(0, 2).map(s => {
+          const meta = getSectorMeta(s)
+          return (
+            <span key={s} className="sector-pill sector-pill-sm" style={{ background: meta.bg, color: meta.color }}>
+              {s}
+            </span>
+          )
+        })}
+        {list.length > 2 && (
+          <span className="sector-pill sector-pill-sm" style={{ background: '#f1f5f9', color: '#64748b' }}>
+            +{list.length - 2}
+          </span>
+        )}
+      </>
+    )
+  }
+  // Fall back to legacy theme pill
+  if (theme) return <ThemePill theme={theme} />
+  return null
 }
 
 function CriteriaScore({ deal }) {
@@ -146,15 +169,23 @@ export default function DealCard({ deal, onEdit, onDelete, onView, isOverlay = f
         </div>
       )}
 
-      {/* Theme pill + EV */}
+      {/* Sector pills + EV */}
       <div className="card-pills-row">
-        {deal.theme && <ThemePill theme={deal.theme} />}
+        <SectorPills sectors={deal.sectors} theme={deal.theme} />
         {(deal.ev_range || deal.ev != null) && (
           <span className="card-tag ev">
             {deal.ev_range ? `€${deal.ev_range}m` : `€${deal.ev}m`}
           </span>
         )}
       </div>
+
+      {/* Last contact */}
+      {deal.last_contact_at && (
+        <div className="card-last-contact">
+          <span className="card-last-contact-dot" />
+          {new Date(deal.last_contact_at + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+        </div>
+      )}
 
       {/* Next action */}
       {(deal.next_action || deal.next_action_due) && (

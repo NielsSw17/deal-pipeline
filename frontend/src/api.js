@@ -52,6 +52,15 @@ export const api = {
   updateInteraction:   (interactionId, data) => request(`/interactions/${interactionId}`,      { method: 'PUT',    body: JSON.stringify(data) }),
   deleteInteraction:   (interactionId)       => request(`/interactions/${interactionId}`,      { method: 'DELETE' }),
 
+  // Correspondence (timeline)
+  getCorrespondence:    (dealId)              => request(`/deals/${dealId}/correspondence`),
+  createCorrespondence: (dealId, data)        => request(`/deals/${dealId}/correspondence`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteCorrespondence: (dealId, entryId)     => request(`/deals/${dealId}/correspondence/${entryId}`, { method: 'DELETE' }),
+
+  // Sectors
+  getSectors:    ()     => request('/sectors'),
+  createSector:  (data) => request('/sectors', { method: 'POST', body: JSON.stringify(data) }),
+
   // File upload
   uploadFile: async (file) => {
     const fd = new FormData()
@@ -78,7 +87,7 @@ export const api = {
       const err = await res.json().catch(() => ({ detail: 'Import failed' }))
       throw new Error(err.detail || 'Import failed')
     }
-    return res.json()  // { imported, skipped }
+    return res.json()
   },
 
   seedDeals: () => request('/deals/seed', { method: 'POST' }),

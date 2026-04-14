@@ -13,6 +13,7 @@ import AnalyticsPage from './components/AnalyticsPage'
 import StatsBar from './components/StatsBar'
 import DTELogo from './components/DTELogo'
 import ImportModal from './components/ImportModal'
+import CorrespondencePanel from './components/CorrespondencePanel'
 
 let toastId = 0
 
@@ -39,6 +40,9 @@ export default function App() {
 
   // Import modal
   const [importOpen, setImportOpen]   = useState(false)
+
+  // Correspondence timeline panel
+  const [timelineDeal, setTimelineDeal] = useState(null)
 
   // Global filters (apply only to kanban/table)
   const [search, setSearch]           = useState('')
@@ -377,6 +381,18 @@ export default function App() {
           onClose={closeDetail}
           onEdit={openEdit}
           onUpdate={handleUpdate}
+          onOpenTimeline={(deal) => setTimelineDeal(deal)}
+        />
+      )}
+
+      {/* ── Correspondence timeline panel ── */}
+      {timelineDeal && (
+        <CorrespondencePanel
+          deal={timelineDeal}
+          onClose={() => setTimelineDeal(null)}
+          onContactUpdated={(date) => {
+            handleUpdate(timelineDeal.id, { last_contact_at: date })
+          }}
         />
       )}
 

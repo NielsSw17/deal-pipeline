@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-import os, shutil, uuid, io
+import os, shutil, uuid, io, json
 
 import models
 from database import engine, get_db, Base
@@ -49,6 +49,9 @@ def _migrate():
             ("crit_majority",   "BOOLEAN DEFAULT 0"),
             ("crit_ticket",     "BOOLEAN DEFAULT 0"),
             ("ev_range",        "TEXT"),
+            ("sectors",         "TEXT"),
+            ("deal_type",       "TEXT"),
+            ("last_contact_at", "TEXT"),
         ]
         for col, typedef in new_cols:
             col_name = col
@@ -111,6 +114,53 @@ def _migrate():
             )
         """))
 
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sectors (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL UNIQUE,
+                theme      TEXT,
+                is_custom  BOOLEAN NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        # Seed taxonomy sectors
+        taxonomy = [
+            ("Renewable Energy",              "Energy"),
+            ("Smart Grid",                    "Energy"),
+            ("Energy Storage",                "Energy"),
+            ("Energy Efficiency",             "Energy"),
+            ("Energy Management",             "Energy"),
+            ("AgTech",                        "Food"),
+            ("Food Processing Technology",    "Food"),
+            ("Post-Harvest & Supply Chain",   "Food"),
+            ("MedTech",                       "Health"),
+            ("Digital Health",                "Health"),
+            ("Prevention",                    "Health"),
+            ("Remote Monitoring Technology",  "Health"),
+        ]
+        for name, theme in taxonomy:
+            conn.execute(
+                text("INSERT OR IGNORE INTO sectors (name, theme, is_custom) VALUES (:n, :t, 0)"),
+                {"n": name, "t": theme},
+            )
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS correspondence (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                deal_id               INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+                type                  TEXT NOT NULL,
+                date                  TEXT NOT NULL,
+                team_members          TEXT,
+                external_participants TEXT,
+                subject               TEXT,
+                notes                 TEXT,
+                filename              TEXT,
+                original_filename     TEXT,
+                created_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
         conn.commit()
 
 
@@ -133,7 +183,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-STAGE_ORDER = ["Sourcing", "Screening", "IC", "Due Diligence", "Signed", "Closed"]
+STAGE_ORDER = ["Sourcing", "Screening", "IC", "Due Diligence", "Signed", "Closed", "Postponed"]
 
 # ── Stage history helper ──────────────────────────────────────────────────────
 
@@ -154,6 +204,8 @@ class DealBase(BaseModel):
     company_name:   str
     stage:          str             = "Sourcing"
     sector:         Optional[str]   = None
+    sectors:        Optional[str]   = None   # JSON array string
+    deal_type:      Optional[str]   = None   # Platform / Add-on / Carve-out
     ev:             Optional[float] = None
     ev_range:       Optional[str]   = None
     country:        Optional[str]   = None
@@ -185,6 +237,7 @@ class DealBase(BaseModel):
     crit_geography:  Optional[bool] = False
     crit_majority:   Optional[bool] = False
     crit_ticket:     Optional[bool] = False
+    last_contact_at: Optional[str]  = None
 
 
 class DealCreate(DealBase):
@@ -195,6 +248,8 @@ class DealUpdate(BaseModel):
     company_name:   Optional[str]   = None
     stage:          Optional[str]   = None
     sector:         Optional[str]   = None
+    sectors:        Optional[str]   = None
+    deal_type:      Optional[str]   = None
     ev:             Optional[float] = None
     ev_range:       Optional[str]   = None
     country:        Optional[str]   = None
@@ -226,6 +281,7 @@ class DealUpdate(BaseModel):
     crit_geography:  Optional[bool] = None
     crit_majority:   Optional[bool] = None
     crit_ticket:     Optional[bool] = None
+    last_contact_at: Optional[str]  = None
 
 
 class DealResponse(DealBase):
@@ -644,6 +700,47 @@ def serve_upload(filename: str):
     return FileResponse(path)
 
 
+# ── Sector schemas ────────────────────────────────────────────────────────────
+
+class SectorCreate(BaseModel):
+    name:  str
+    theme: Optional[str] = None
+
+class SectorResponse(BaseModel):
+    id:        int
+    name:      str
+    theme:     Optional[str] = None
+    is_custom: bool
+    model_config = {"from_attributes": True}
+
+
+# ── Correspondence schemas ─────────────────────────────────────────────────────
+
+class CorrespondenceCreate(BaseModel):
+    type:                  str
+    date:                  str
+    team_members:          Optional[str] = None
+    external_participants: Optional[str] = None
+    subject:               Optional[str] = None
+    notes:                 Optional[str] = None
+    filename:              Optional[str] = None
+    original_filename:     Optional[str] = None
+
+class CorrespondenceResponse(BaseModel):
+    id:                    int
+    deal_id:               int
+    type:                  str
+    date:                  str
+    team_members:          Optional[str] = None
+    external_participants: Optional[str] = None
+    subject:               Optional[str] = None
+    notes:                 Optional[str] = None
+    filename:              Optional[str] = None
+    original_filename:     Optional[str] = None
+    created_at:            Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
 # ── Import helpers ────────────────────────────────────────────────────────────
 
 THEME_MAP = {
@@ -750,6 +847,7 @@ def _map_deal_row(row: dict) -> Optional[dict]:
         "ev":           ev_mid,
         "notes":        notes,
         "lost_reason":  lost_reason,
+        "deal_type":    deal_type,
     }
 
 
@@ -777,6 +875,7 @@ def _bulk_import(deals_data: list, db: Session) -> dict:
             ev          =row.get("ev"),
             notes       =row.get("notes"),
             lost_reason =row.get("lost_reason"),
+            deal_type   =row.get("deal_type"),
             position    =stage_count,
         )
         db.add(db_deal)
@@ -888,6 +987,76 @@ def seed_deals(db: Session = Depends(get_db)):
     return result
 
 
+# ── Sectors ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/sectors", response_model=List[SectorResponse])
+def get_sectors(db: Session = Depends(get_db)):
+    return db.query(models.Sector).order_by(models.Sector.theme, models.Sector.name).all()
+
+
+@app.post("/api/sectors", response_model=SectorResponse, status_code=201)
+def create_sector(sector: SectorCreate, db: Session = Depends(get_db)):
+    existing = db.query(models.Sector).filter(models.Sector.name == sector.name).first()
+    if existing:
+        raise HTTPException(400, "Sector already exists")
+    db_sector = models.Sector(name=sector.name, theme=sector.theme, is_custom=True)
+    db.add(db_sector)
+    db.commit()
+    db.refresh(db_sector)
+    return db_sector
+
+
+# ── Correspondence ─────────────────────────────────────────────────────────────
+
+@app.get("/api/deals/{deal_id}/correspondence", response_model=List[CorrespondenceResponse])
+def get_correspondence(deal_id: int, db: Session = Depends(get_db)):
+    return (
+        db.query(models.Correspondence)
+        .filter(models.Correspondence.deal_id == deal_id)
+        .order_by(models.Correspondence.date.desc(), models.Correspondence.created_at.desc())
+        .all()
+    )
+
+
+@app.post("/api/deals/{deal_id}/correspondence", response_model=CorrespondenceResponse, status_code=201)
+def create_correspondence(deal_id: int, entry: CorrespondenceCreate, db: Session = Depends(get_db)):
+    deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
+    if not deal:
+        raise HTTPException(404, "Deal not found")
+    db_entry = models.Correspondence(deal_id=deal_id, **entry.model_dump())
+    db.add(db_entry)
+    db.flush()
+    # Update last_contact_at on the deal if this entry's date is newer
+    if not deal.last_contact_at or entry.date >= deal.last_contact_at:
+        deal.last_contact_at = entry.date
+    db.commit()
+    db.refresh(db_entry)
+    return db_entry
+
+
+@app.delete("/api/deals/{deal_id}/correspondence/{entry_id}", status_code=204)
+def delete_correspondence(deal_id: int, entry_id: int, db: Session = Depends(get_db)):
+    entry = db.query(models.Correspondence).filter(
+        models.Correspondence.id == entry_id,
+        models.Correspondence.deal_id == deal_id,
+    ).first()
+    if not entry:
+        raise HTTPException(404, "Entry not found")
+    db.delete(entry)
+    db.flush()
+    # Recompute last_contact_at from remaining entries
+    remaining = (
+        db.query(models.Correspondence)
+        .filter(models.Correspondence.deal_id == deal_id)
+        .order_by(models.Correspondence.date.desc())
+        .first()
+    )
+    deal = db.query(models.Deal).filter(models.Deal.id == deal_id).first()
+    if deal:
+        deal.last_contact_at = remaining.date if remaining else None
+    db.commit()
+
+
 # ── Analytics ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/analytics/")
@@ -898,13 +1067,17 @@ def get_analytics(db: Session = Depends(get_db)):
     active = [d for d in deals if d.stage != "Lost"]
     lost   = [d for d in deals if d.stage == "Lost"]
 
-    # 1. Funnel
+    # 1. Funnel (show Sourcing→Closed progression + Postponed; no conversion for Postponed)
+    FUNNEL_STAGES = ["Sourcing", "Screening", "IC", "Due Diligence", "Signed", "Closed"]
     funnel = []
-    for i, stage in enumerate(STAGE_ORDER):
+    for i, stage in enumerate(FUNNEL_STAGES):
         count      = len([d for d in deals if d.stage == stage])
-        prev_count = len([d for d in deals if d.stage == STAGE_ORDER[i - 1]]) if i > 0 else None
+        prev_count = len([d for d in deals if d.stage == FUNNEL_STAGES[i - 1]]) if i > 0 else None
         conv_pct   = round(count / prev_count * 100) if prev_count else None
         funnel.append({"stage": stage, "count": count, "conversion_pct": conv_pct})
+    # Append Postponed without conversion rate
+    postponed_count = len([d for d in deals if d.stage == "Postponed"])
+    funnel.append({"stage": "Postponed", "count": postponed_count, "conversion_pct": None})
 
     # 2. Avg days per stage (from history records) — key: deal_count for frontend
     stage_time = []
@@ -984,6 +1157,16 @@ def get_analytics(db: Session = Depends(get_db)):
     closed_deals = [d for d in deals if d.stage == "Closed"]
     win_rate = round(len(closed_deals) / (len(closed_deals) + len(lost)) * 100) if (closed_deals or lost) else 0
 
+    # Correspondence recency
+    deals_with_contact = [d for d in active if d.last_contact_at]
+    avg_days_since_contact = None
+    if deals_with_contact:
+        total_days = sum(
+            (datetime.utcnow().date() - datetime.strptime(d.last_contact_at, "%Y-%m-%d").date()).days
+            for d in deals_with_contact
+        )
+        avg_days_since_contact = round(total_days / len(deals_with_contact), 1)
+
     return {
         "funnel":     funnel,
         "stage_time": [s for s in stage_time if s["deal_count"] > 0],
@@ -999,7 +1182,9 @@ def get_analytics(db: Session = Depends(get_db)):
             "total":        len(deals),
             "pipeline_ev":  round(sum(d.ev or 0 for d in active), 1),
             "closed_ev":    round(sum(d.ev or 0 for d in closed_deals), 1),
-            "win_rate":     win_rate,
+            "win_rate":              win_rate,
+            "postponed_count":       postponed_count,
+            "avg_days_since_contact": avg_days_since_contact,
         },
     }
 
