@@ -2447,6 +2447,300 @@ body {
   flex-shrink: 0;
 }
 
+/* ── LOGIN PAGE ──────────────────────────────────────────── */
+.login-page {
+  min-height: 100vh;
+  background: #1F3864;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 40px 44px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 24px 48px rgba(0,0,0,.25);
+}
+
+.login-brand {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-logo-text {
+  font-size: 22px;
+  font-weight: 800;
+  color: #1F3864;
+  letter-spacing: -.3px;
+  line-height: 1.2;
+}
+
+.login-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-weight: 500;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.login-btn {
+  width: 100%;
+  height: 42px;
+  font-size: 15px;
+  font-weight: 600;
+  background: #1F3864;
+  border-color: #1F3864;
+  margin-top: 4px;
+}
+
+.login-btn:hover:not(:disabled) {
+  background: #16294d;
+  border-color: #16294d;
+}
+
+/* ── USER MENU (navbar) ──────────────────────────────────── */
+.user-menu {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
+
+.user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── SETTINGS PAGE ───────────────────────────────────────── */
+.settings-container {
+  padding: 32px 24px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.settings-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.settings-section {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 24px;
+}
+
+.settings-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.settings-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 16px;
+}
+
+.settings-section-header .settings-section-title {
+  margin-bottom: 0;
+}
+
+/* Change password form */
+.pw-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 400px;
+}
+
+.pw-msg {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+}
+
+.pw-msg-ok  { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.pw-msg-err { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+
+/* Add user form */
+.add-user-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+
+.add-user-form .form-input,
+.add-user-form .form-select {
+  flex: 1 1 180px;
+}
+
+/* Users table */
+.settings-table-wrap {
+  overflow-x: auto;
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.settings-table th {
+  text-align: left;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-bottom: 2px solid var(--border);
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.settings-td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: top;
+}
+
+.settings-td-mono { font-family: monospace; font-size: 12px; }
+
+.settings-actions { min-width: 200px; }
+
+.user-row-inactive { opacity: .5; }
+
+.user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.badge-you {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-light);
+  border-radius: 99px;
+  padding: 1px 6px;
+  margin-left: 6px;
+}
+
+/* Role badges */
+.role-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+  text-transform: capitalize;
+}
+
+.role-admin  { background: #fef3c7; color: #92400e; }
+.role-member { background: var(--primary-light); color: var(--primary); }
+
+/* Status badges */
+.status-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+
+.status-active   { background: #f0fdf4; color: #16a34a; }
+.status-inactive { background: var(--bg); color: var(--text-muted); }
+
+/* Inline user edit form */
+.user-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 260px;
+}
+
+.user-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-edit-row label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  width: 90px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.user-edit-row .form-input,
+.user-edit-row .form-select {
+  flex: 1;
+  height: 30px;
+  font-size: 12px;
+  padding: 0 8px;
+}
+
+.user-edit-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-danger {
+  color: var(--danger) !important;
+}
+
+.btn-danger:hover {
+  background: var(--danger-light) !important;
+}
+
 .domain-logo-fallback {
   width: 28px;
   height: 28px;

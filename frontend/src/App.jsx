@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { api } from './api'
 import { TEAM, THEMES, STAGE_ORDER, STAGE_GATES } from './constants'
 import { exportPipelineToExcel, exportDealToPDF } from './utils/export'
+import { useAuth } from './contexts/AuthContext'
 import KanbanBoard from './components/KanbanBoard'
 import TableView from './components/TableView'
 import DealModal from './components/DealModal'
@@ -16,13 +17,17 @@ import ImportModal from './components/ImportModal'
 import CorrespondencePanel from './components/CorrespondencePanel'
 import PostponeModal from './components/PostponeModal'
 import AlertBanner from './components/AlertBanner'
+import LoginPage from './components/LoginPage'
+import SettingsPage from './components/SettingsPage'
 
 let toastId = 0
 
 export default function App() {
+  const { user, loading: authLoading, logout } = useAuth()
+
   const [deals, setDeals]             = useState([])
   const [loading, setLoading]         = useState(true)
-  const [view, setView]               = useState('kanban') // kanban | table | analytics | lost
+  const [view, setView]               = useState('kanban') // kanban | table | analytics | lost | settings
   const [modalOpen, setModalOpen]     = useState(false)
   const [editingDeal, setEditingDeal] = useState(null)
   const [toasts, setToasts]           = useState([])
@@ -54,6 +59,8 @@ export default function App() {
   const [ownerFilter, setOwnerFilter] = useState('All')
   const [themeFilter, setThemeFilter] = useState('All')
 
+  const isAdmin = user?.role === 'admin'
+
   const showToast = useCallback((msg, type = 'info') => {
     const id = ++toastId
     setToasts(t => [...t, { id, msg, type }])
@@ -71,7 +78,10 @@ export default function App() {
     }
   }, [showToast])
 
-  useEffect(() => { loadDeals() }, [loadDeals])
+  useEffect(() => {
+    if (user) loadDeals()
+    else setLoading(false)
+  }, [user, loadDeals])
 
   // Close export dropdown on outside click
   useEffect(() => {
@@ -102,6 +112,7 @@ export default function App() {
   }
 
   const handleDelete = async (id) => {
+    if (!isAdmin) { showToast('Only admins can delete deals', 'error'); return }
     const deal = deals.find(d => d.id === id)
     if (!window.confirm(`Delete "${deal?.company_name}"?`)) return
     try {
@@ -227,6 +238,14 @@ export default function App() {
 
   const showFilters = view === 'kanban' || view === 'table'
 
+  // Show a spinner while checking auth
+  if (authLoading) {
+    return <div className="loading-state"><div className="spinner" /><span>Loading…</span></div>
+  }
+
+  // Show login page if not authenticated
+  if (!user) return <LoginPage />
+
   return (
     <>
       {/* ── Navbar ── */}
@@ -289,6 +308,9 @@ export default function App() {
           >
             Lost{lostDeals.length > 0 && <span className="lost-count-badge">{lostDeals.length}</span>}
           </button>
+          {isAdmin && (
+            <button className={view === 'settings' ? 'active' : ''} onClick={() => setView('settings')}>⚙ Settings</button>
+          )}
         </div>
 
         {/* Export dropdown */}
@@ -320,14 +342,20 @@ export default function App() {
           )}
         </div>
 
-        <button className="btn btn-ghost btn-sm" onClick={() => setImportOpen(true)}>↑ Import</button>
+        {isAdmin && <button className="btn btn-ghost btn-sm" onClick={() => setImportOpen(true)}>↑ Import</button>}
         <button className="btn btn-primary" onClick={openAdd}>+ Add Deal</button>
+
+        {/* User badge + logout */}
+        <div className="user-menu">
+          <span className="user-name">{user.full_name}</span>
+          <button className="btn btn-ghost btn-sm" onClick={logout}>Log out</button>
+        </div>
       </nav>
 
       {/* ── Alert banner (overdue next actions) ── */}
       <AlertBanner onViewDeal={openDetail} />
 
-      {/* ── Stats bar (hide in analytics/lost) ── */}
+      {/* ── Stats bar (hide in analytics/lost/settings) ── */}
       {(view === 'kanban' || view === 'table') && <StatsBar deals={deals} />}
 
       {/* ── Main content ── */}
@@ -339,7 +367,7 @@ export default function App() {
             deals={filteredDeals}
             onUpdateDeal={handleDragMove}
             onEditDeal={openEdit}
-            onDeleteDeal={handleDelete}
+            onDeleteDeal={isAdmin ? handleDelete : null}
             onViewDeal={openDetail}
           />
         </div>
@@ -348,13 +376,17 @@ export default function App() {
           <TableView
             deals={filteredDeals}
             onEditDeal={openEdit}
-            onDeleteDeal={handleDelete}
+            onDeleteDeal={isAdmin ? handleDelete : null}
             onViewDeal={openDetail}
           />
         </div>
       ) : view === 'analytics' ? (
         <div className="analytics-container">
           <AnalyticsPage />
+        </div>
+      ) : view === 'settings' ? (
+        <div className="settings-container">
+          <SettingsPage />
         </div>
       ) : (
         <div className="table-container">

@@ -1,16 +1,19 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.base import BaseHTTPMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, date as date_type
-import os, shutil, uuid, io, json, smtplib
+import os, shutil, uuid, io, json, smtplib, time
+from collections import defaultdict
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 import models
+import auth
 from database import engine, get_db, Base
 
 # ── Create / migrate database ─────────────────────────────────────────────────
@@ -192,6 +195,39 @@ def _migrate():
                 {"n": name},
             )
 
+        # Users table for authentication
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS users (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                username        TEXT NOT NULL UNIQUE,
+                full_name       TEXT NOT NULL,
+                email           TEXT,
+                role            TEXT NOT NULL DEFAULT 'member',
+                hashed_password TEXT NOT NULL,
+                is_active       BOOLEAN NOT NULL DEFAULT 1,
+                created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        # Seed initial users if table is empty
+        count_row = conn.execute(text("SELECT COUNT(*) FROM users")).fetchone()
+        if count_row[0] == 0:
+            seed_users = [
+                ("hans",    "Hans",    "hans@dte.nl",    "admin",  "DTEhans2026!"),
+                ("mark",    "Mark",    "mark@dte.nl",    "admin",  "DTEmark2026!"),
+                ("niels",   "Niels",   "niels@dte.nl",   "admin",  "DTEniels2026!"),
+                ("pauline", "Pauline", "pauline@dte.nl", "member", "DTEpauline2026!"),
+                ("bart",    "Bart",    "bart@dte.nl",    "member", "DTEbart2026!"),
+                ("pieter",  "Pieter",  "pieter@dte.nl",  "member", "DTEpieter2026!"),
+                ("henk",    "Henk",    "henk@dte.nl",    "member", "DTEhenk2026!"),
+            ]
+            for username, full_name, email, role, password in seed_users:
+                hashed = auth.get_password_hash(password)
+                conn.execute(
+                    text("INSERT INTO users (username, full_name, email, role, hashed_password, is_active) VALUES (:u, :f, :e, :r, :h, 1)"),
+                    {"u": username, "f": full_name, "e": email, "r": role, "h": hashed},
+                )
+
         conn.commit()
 
 
@@ -287,6 +323,66 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Auth middleware ───────────────────────────────────────────────────────────
+
+PUBLIC_PATHS = {"/api/auth/login", "/api/auth/logout", "/api/health"}
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        # Allow public paths, static files, and non-API routes
+        if (path in PUBLIC_PATHS or
+                not path.startswith("/api/") or
+                path.startswith("/api/uploads/")):
+            return await call_next(request)
+
+        token = request.cookies.get("access_token")
+        if not token:
+            return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+
+        payload = auth.decode_token(token)
+        if not payload:
+            return JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
+
+        request.state.user_id = payload.get("sub")
+        request.state.user_role = payload.get("role", "member")
+        return await call_next(request)
+
+app.add_middleware(AuthMiddleware)
+
+# ── In-memory rate limiter for login attempts ─────────────────────────────────
+
+_login_attempts: dict = defaultdict(list)  # ip -> [timestamp, ...]
+RATE_LIMIT_MAX     = 5
+RATE_LIMIT_WINDOW  = 900  # 15 minutes in seconds
+
+
+def _check_rate_limit(ip: str):
+    now = time.time()
+    attempts = [t for t in _login_attempts[ip] if now - t < RATE_LIMIT_WINDOW]
+    _login_attempts[ip] = attempts
+    if len(attempts) >= RATE_LIMIT_MAX:
+        raise HTTPException(status_code=429, detail="Too many failed login attempts. Try again in 15 minutes.")
+    return attempts
+
+
+def _get_current_user(request: Request, db: Session = Depends(get_db)) -> models.User:
+    """Extract current user from request state (set by middleware)."""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user = db.query(models.User).filter(models.User.username == user_id, models.User.is_active == True).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+    return user
+
+
+def _require_admin(current_user: models.User = Depends(_get_current_user)) -> models.User:
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
 
 STAGE_ORDER = ["Sourcing", "Screening", "IC", "Due Diligence", "Portfolio", "Postponed"]
 
@@ -497,6 +593,182 @@ class ContactResponse(BaseModel):
     created_at:   Optional[datetime] = None
     interactions: List[InteractionResponse] = []
     model_config = {"from_attributes": True}
+
+
+# ── Auth schemas ─────────────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class UserResponse(BaseModel):
+    id:         int
+    username:   str
+    full_name:  str
+    email:      Optional[str] = None
+    role:       str
+    is_active:  bool
+    created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class UserCreate(BaseModel):
+    username:  str
+    full_name: str
+    email:     Optional[str] = None
+    role:      str = "member"
+    password:  str
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email:     Optional[str] = None
+    role:      Optional[str] = None
+    is_active: Optional[bool] = None
+    password:  Optional[str] = None  # if provided, change password
+
+
+# ── Auth endpoints ────────────────────────────────────────────────────────────
+
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
+
+
+@app.post("/api/auth/login")
+def login(body: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip)
+
+    user = db.query(models.User).filter(models.User.username == body.username).first()
+    if not user or not user.is_active or not auth.verify_password(body.password, user.hashed_password):
+        _login_attempts[ip].append(time.time())
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # Successful login — clear rate limit for this IP
+    _login_attempts[ip] = []
+
+    token = auth.create_access_token({"sub": user.username, "role": user.role})
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        max_age=86400,
+        samesite="lax",
+        secure=IS_PRODUCTION,
+    )
+    return {
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": user.role,
+        }
+    }
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response):
+    response.delete_cookie("access_token", samesite="lax")
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def get_me(current_user: models.User = Depends(_get_current_user)):
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "full_name": current_user.full_name,
+        "email": current_user.email,
+        "role": current_user.role,
+    }
+
+
+@app.post("/api/auth/change-password")
+def change_password(
+    body: ChangePasswordRequest,
+    current_user: models.User = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not auth.verify_password(body.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    current_user.hashed_password = auth.get_password_hash(body.new_password)
+    db.commit()
+    return {"ok": True}
+
+
+# ── User management (admin only) ──────────────────────────────────────────────
+
+@app.get("/api/users", response_model=List[UserResponse])
+def list_users(_: models.User = Depends(_require_admin), db: Session = Depends(get_db)):
+    return db.query(models.User).order_by(models.User.id).all()
+
+
+@app.post("/api/users", response_model=UserResponse, status_code=201)
+def create_user(body: UserCreate, _: models.User = Depends(_require_admin), db: Session = Depends(get_db)):
+    existing = db.query(models.User).filter(models.User.username == body.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    user = models.User(
+        username=body.username,
+        full_name=body.full_name,
+        email=body.email,
+        role=body.role,
+        hashed_password=auth.get_password_hash(body.password),
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.patch("/api/users/{user_id}", response_model=UserResponse)
+def update_user(
+    user_id: int,
+    body: UserUpdate,
+    _: models.User = Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    updates = body.model_dump(exclude_unset=True)
+    if "password" in updates:
+        pw = updates.pop("password")
+        if pw and len(pw) < 8:
+            raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+        if pw:
+            user.hashed_password = auth.get_password_hash(pw)
+    for key, value in updates.items():
+        setattr(user, key, value)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.delete("/api/users/{user_id}", status_code=204)
+def delete_user(
+    user_id: int,
+    current_user: models.User = Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(user)
+    db.commit()
 
 
 # ── Deal CRUD ─────────────────────────────────────────────────────────────────

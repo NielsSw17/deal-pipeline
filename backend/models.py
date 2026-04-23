@@ -143,3 +143,17 @@ class TeamMember(Base):
     name       = Column(String,  nullable=False, unique=True)
     email      = Column(String,  nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class User(Base):
+    """Login users with roles for access control."""
+    __tablename__ = "users"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    username        = Column(String, nullable=False, unique=True)
+    full_name       = Column(String, nullable=False)
+    email           = Column(String, nullable=True)
+    role            = Column(String, nullable=False, default="member")  # admin / member
+    hashed_password = Column(String, nullable=False)
+    is_active       = Column(Boolean, default=True, nullable=False)
+    created_at      = Column(DateTime, server_default=func.now())

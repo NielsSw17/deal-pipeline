@@ -3,6 +3,7 @@ const BASE = '/api'
 async function request(path, options = {}) {
   const isFormData = options.body instanceof FormData
   const res = await fetch(`${BASE}${path}`, {
+    credentials: 'include',
     headers: isFormData ? options.headers : { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   })
@@ -15,6 +16,18 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  // Auth
+  login:          (username, password) => request('/auth/login',           { method: 'POST', body: JSON.stringify({ username, password }) }),
+  logout:         ()                   => request('/auth/logout',          { method: 'POST' }),
+  getMe:          ()                   => request('/auth/me'),
+  changePassword: (current_password, new_password) => request('/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password, new_password }) }),
+
+  // User management (admin only)
+  getUsers:    ()            => request('/users'),
+  createUser:  (data)        => request('/users',       { method: 'POST',  body: JSON.stringify(data) }),
+  updateUser:  (id, data)    => request(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteUser:  (id)          => request(`/users/${id}`, { method: 'DELETE' }),
+
   // Deals
   getDeals:     ()         => request('/deals'),
   createDeal:   (data)     => request('/deals',         { method: 'POST',   body: JSON.stringify(data) }),
@@ -33,7 +46,11 @@ export const api = {
   uploadDocument: async (dealId, file, category) => {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await fetch(`/api/deals/${dealId}/documents?category=${encodeURIComponent(category)}`, { method: 'POST', body: fd })
+    const res = await fetch(`/api/deals/${dealId}/documents?category=${encodeURIComponent(category)}`, {
+      method: 'POST',
+      body: fd,
+      credentials: 'include',
+    })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Upload failed' }))
       throw new Error(err.detail || 'Upload failed')
@@ -73,7 +90,7 @@ export const api = {
   uploadFile: async (file) => {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await fetch(`${BASE}/upload`, { method: 'POST', body: fd })
+    const res = await fetch(`${BASE}/upload`, { method: 'POST', body: fd, credentials: 'include' })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Upload failed' }))
       throw new Error(err.detail || 'Upload failed')
@@ -90,7 +107,7 @@ export const api = {
   importDeals: async (file) => {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await fetch('/api/deals/import', { method: 'POST', body: fd })
+    const res = await fetch('/api/deals/import', { method: 'POST', body: fd, credentials: 'include' })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Import failed' }))
       throw new Error(err.detail || 'Import failed')
