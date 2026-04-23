@@ -210,23 +210,26 @@ def _migrate():
         """))
 
         # Seed initial users if table is empty
-        count_row = conn.execute(text("SELECT COUNT(*) FROM users")).fetchone()
-        if count_row[0] == 0:
-            seed_users = [
-                ("hans",    "Hans",    "hans@dte.nl",    "admin",  "DTEhans2026!"),
-                ("mark",    "Mark",    "mark@dte.nl",    "admin",  "DTEmark2026!"),
-                ("niels",   "Niels",   "niels@dte.nl",   "admin",  "DTEniels2026!"),
-                ("pauline", "Pauline", "pauline@dte.nl", "member", "DTEpauline2026!"),
-                ("bart",    "Bart",    "bart@dte.nl",    "member", "DTEbart2026!"),
-                ("pieter",  "Pieter",  "pieter@dte.nl",  "member", "DTEpieter2026!"),
-                ("henk",    "Henk",    "henk@dte.nl",    "member", "DTEhenk2026!"),
-            ]
-            for username, full_name, email, role, password in seed_users:
-                hashed = auth.get_password_hash(password)
-                conn.execute(
-                    text("INSERT INTO users (username, full_name, email, role, hashed_password, is_active) VALUES (:u, :f, :e, :r, :h, 1)"),
-                    {"u": username, "f": full_name, "e": email, "r": role, "h": hashed},
-                )
+        try:
+            count_row = conn.execute(text("SELECT COUNT(*) FROM users")).fetchone()
+            if count_row[0] == 0:
+                seed_users = [
+                    ("hans",    "Hans",    "hans@dte.nl",    "admin",  "DTEhans2026!"),
+                    ("mark",    "Mark",    "mark@dte.nl",    "admin",  "DTEmark2026!"),
+                    ("niels",   "Niels",   "niels@dte.nl",   "admin",  "DTEniels2026!"),
+                    ("pauline", "Pauline", "pauline@dte.nl", "member", "DTEpauline2026!"),
+                    ("bart",    "Bart",    "bart@dte.nl",    "member", "DTEbart2026!"),
+                    ("pieter",  "Pieter",  "pieter@dte.nl",  "member", "DTEpieter2026!"),
+                    ("henk",    "Henk",    "henk@dte.nl",    "member", "DTEhenk2026!"),
+                ]
+                for username, full_name, email, role, password in seed_users:
+                    hashed = auth.get_password_hash(password)
+                    conn.execute(
+                        text("INSERT INTO users (username, full_name, email, role, hashed_password, is_active) VALUES (:u, :f, :e, :r, :h, 1)"),
+                        {"u": username, "f": full_name, "e": email, "r": role, "h": hashed},
+                    )
+        except Exception as e:
+            print(f"[migrate] user seed error: {e}")
 
         conn.commit()
 
